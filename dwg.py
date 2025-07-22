@@ -16,25 +16,10 @@ sns.set_theme(style="whitegrid")
 # DARK MODE CSS
 dark_css = """
 <style>
-body {
-    background-color: #121212;
-    color: #E0E0E0;
-}
-.sidebar .sidebar-content {
-    background: #1E1E1E;
-}
-.stButton > button {
-    background-color: #4CAF50;
-    color: white;
-    border-radius: 8px;
-}
-div[data-testid="stHorizontalBlock"] > div {
-    border-radius: 12px;
-    padding: 12px;
-}
-h1, h2, h3, h4, h5 {
-    color: #81C784;
-}
+body { background-color: #121212; color: #E0E0E0; }
+.sidebar .sidebar-content { background: #1E1E1E; }
+.stButton > button { background-color: #4CAF50; color: white; border-radius: 8px; }
+div[data-testid="stHorizontalBlock"] > div { border-radius: 12px; padding: 12px; }
 </style>
 """
 st.markdown(dark_css, unsafe_allow_html=True)
@@ -58,6 +43,9 @@ if not st.session_state.file_uploaded:
 else:
     uploaded_file = st.session_state.uploaded_file
     st.success(f"✅ File berhasil diunggah: {uploaded_file.name}")
+    if st.button("🔄 Reset File", key="reset"):
+        st.session_state.file_uploaded = False
+        st.experimental_rerun()
 
 # ----------------- MAIN PROCESS -----------------
 if st.session_state.file_uploaded:
@@ -119,64 +107,53 @@ if st.session_state.file_uploaded:
 
     best = df_eval.sort_values(by=metric_option, ascending=False).iloc[0]
 
-    # ----------------- CONFUSION MATRIX -----------------
+    # ----------------- CONFUSION MATRIX & ANALISIS -----------------
     cm_c45 = confusion_matrix(y_test, y_pred_c45)
     cm_nb = confusion_matrix(y_test, y_pred_nb)
 
-    # ----------------- HASIL PREDIKSI -----------------
-    c45_tercapai = sum(y_pred_c45 == 1)
-    c45_tidak = sum(y_pred_c45 == 0)
-    nb_tercapai = sum(y_pred_nb == 1)
-    nb_tidak = sum(y_pred_nb == 0)
+    # Hitung hasil prediksi
+    c45_tercapai = int((y_pred_c45 == 1).sum())
+    c45_tidak = int((y_pred_c45 == 0).sum())
+    nb_tercapai = int((y_pred_nb == 1).sum())
+    nb_tidak = int((y_pred_nb == 0).sum())
 
+    # ----------------- HASIL PREDIKSI PO -----------------
     st.markdown("### 🎯 Hasil Prediksi PO Tercapai & Tidak Tercapai")
     colA, colB = st.columns(2)
 
     # ---- C4.5 ----
     with colA:
-        subcol1, subcol2 = st.columns([1, 1])
-        with subcol1:
+        sub1, sub2 = st.columns([1.2, 0.8], gap="small")
+        with sub1:
             st.markdown("#### 🔴 C4.5")
-            st.markdown(f"""
-- **Tercapai**: {c45_tercapai}  
-- **Tidak**: {c45_tidak}
-""")
-        with subcol2:
-            fig_c45, ax_c45 = plt.subplots(figsize=(2, 2))
+            st.markdown(f"- **Tercapai:** {c45_tercapai}  \n- **Tidak:** {c45_tidak}")
+        with sub2:
+            fig_c45, ax_c45 = plt.subplots(figsize=(1.6, 1.6))
             sns.barplot(x=['Tercapai', 'Tidak'], y=[c45_tercapai, c45_tidak],
                         palette=['#4CAF50', '#E53935'], ax=ax_c45)
             ax_c45.set_ylabel("")
-            ax_c45.set_xlabel("")
-            ax_c45.set_title("", fontsize=8)
             for i, v in enumerate([c45_tercapai, c45_tidak]):
                 ax_c45.text(i, v + 0.1, str(v), ha='center', fontsize=7)
             ax_c45.tick_params(axis='both', labelsize=7)
-            plt.tight_layout()
             st.pyplot(fig_c45)
 
     # ---- Naive Bayes ----
     with colB:
-        subcol3, subcol4 = st.columns([1, 1])
-        with subcol3:
+        sub3, sub4 = st.columns([1.2, 0.8], gap="small")
+        with sub3:
             st.markdown("#### 🔵 Naive Bayes")
-            st.markdown(f"""
-- **Tercapai**: {nb_tercapai}  
-- **Tidak**: {nb_tidak}
-""")
-        with subcol4:
-            fig_nb, ax_nb = plt.subplots(figsize=(2, 2))
+            st.markdown(f"- **Tercapai:** {nb_tercapai}  \n- **Tidak:** {nb_tidak}")
+        with sub4:
+            fig_nb, ax_nb = plt.subplots(figsize=(1.6, 1.6))
             sns.barplot(x=['Tercapai', 'Tidak'], y=[nb_tercapai, nb_tidak],
                         palette=['#4CAF50', '#E53935'], ax=ax_nb)
             ax_nb.set_ylabel("")
-            ax_nb.set_xlabel("")
-            ax_nb.set_title("", fontsize=8)
             for i, v in enumerate([nb_tercapai, nb_tidak]):
                 ax_nb.text(i, v + 0.1, str(v), ha='center', fontsize=7)
             ax_nb.tick_params(axis='both', labelsize=7)
-            plt.tight_layout()
             st.pyplot(fig_nb)
 
-    # ----------------- RINGKASAN ANALISIS -----------------
+    # ----------------- RINGKASAN ANALISIS + GRAFIK + TABEL -----------------
     st.markdown("---")
     col1, col2 = st.columns([1, 2])
 
@@ -193,15 +170,14 @@ if st.session_state.file_uploaded:
         csv = df_eval.to_csv(index=False).encode('utf-8')
         st.download_button("⬇️ Download Hasil (CSV)", data=csv, file_name="hasil_evaluasi.csv", mime="text/csv")
 
-    # ----------------- GRAFIK PERBANDINGAN -----------------
     with col2:
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
         sns.barplot(data=df_eval, x='Model', y=metric_option, palette="viridis", ax=axes[0])
         axes[0].set_ylim(0, 1)
         axes[0].set_title(f"Perbandingan {metric_option}")
         for i, val in enumerate(df_eval[metric_option]):
-            axes[0].text(i, val + 0.02, f"{val:.2f}", ha='center', fontsize=9)
+            axes[0].text(i, val + 0.02, f"{val:.2f}", ha='center')
 
         sns.heatmap(cm_c45, annot=True, fmt='d', cmap='Blues', ax=axes[1])
         axes[1].set_title("C4.5")
@@ -217,6 +193,6 @@ if st.session_state.file_uploaded:
         buf.seek(0)
         st.download_button("⬇️ Download Grafik (PNG)", data=buf, file_name="grafik_dashboard.png", mime="image/png")
 
-    # ----------------- TABEL EVALUASI -----------------
+    # Tabel Evaluasi
     st.markdown("<h3 style='color:#81C784;'>📄 Tabel Evaluasi Lengkap</h3>", unsafe_allow_html=True)
     st.dataframe(df_eval.style.highlight_max(axis=0, color='lightgreen'))
