@@ -2,41 +2,15 @@ import streamlit as st
 import zipfile
 import os
 import math
-import subprocess
+from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
-from xml.etree import ElementTree as ET
-from io import BytesIO
 
-st.set_page_config(page_title="KMZ → DXF/DWG Converter", layout="wide")
+st.set_page_config(page_title="KMZ → DWG Converter", layout="wide")
 
-# ------------------- STYLE -------------------
-st.markdown("""
-<style>
-h1 { text-align: center; color: #4CAF50; }
-.stButton>button {
-    background-color: #4CAF50; color: white;
-    font-size: 16px; padding: 10px 20px;
-    border-radius: 8px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ------------------- TITLE -------------------
-st.title("📐 KMZ → DXF/DWG Converter")
-st.markdown("Konversi file **KMZ** menjadi **DXF/DWG** sesuai template AutoCAD.")
-
-# ------------------- UPLOAD SECTION -------------------
-col1, col2 = st.columns(2)
-with col1:
-    kmz_file = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-with col2:
-    template_file = st.file_uploader("📂 Upload Template (DXF/DWG)", type=["dxf", "dwg"])
-
-# ------------------- TRANSFORMER -------------------
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-# ------------------- FUNGSI -------------------
+# Fungsi extract KMZ
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
         kmz_file.extractall(extract_dir)
@@ -52,16 +26,35 @@ def parse_kml(kml_path):
         name = pm.find('kml:name', ns)
         coord = pm.find('.//kml:coordinates', ns)
         if name is not None and coord is not None:
+            name_text = name.text.strip()
             lon, lat, *_ = coord.text.strip().split(',')
-            points.append({
-                'name': name.text.strip(),
-                'latitude': float(lat),
-                'longitude': float(lon)
-            })
+            points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon)})
     return points
 
+def parse_boundaries(kml_path):
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    tree = ET.parse(kml_path)
+    root = tree.getroot()
+    boundaries = []
+    for folder in root.findall(".//kml:Folder", ns):
+        name_tag = folder.find('kml:name', ns)
+        if name_tag is not None and name_tag.text.strip().upper() == "BOUNDARY":
+            placemarks = folder.findall(".//kml:Placemark", ns)
+            for pm in placemarks:
+                coords = pm.find('.//kml:coordinates', ns)
+                if coords is not None:
+                    coord_list = []
+                    for pair in coords.text.strip().split():
+                        lon, lat, *_ = map(float, pair.split(','))
+                        coord_list.append(latlon_to_xy(lat, lon))
+                    boundaries.append(coord_list)
+    return boundaries
+
 def classify_points(points):
-    classified = {"FDT": [], "FAT": [], "POLE": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": []}
+    classified = {
+        "FDT": [], "FAT": [], "POLE": [], "HP_COVER": [],
+        "NEW_POLE": [], "EXISTING_POLE": []
+    }
     for p in points:
         name = p['name'].upper()
         if "FDT" in name:
@@ -82,76 +75,84 @@ def latlon_to_xy(lat, lon):
     x, y = transformer.transform(lon, lat)
     return x, y
 
-def convert_dwg_to_dxf(dwg_path, output_path):
-    try:
-        cmd = f"ODAFileConverter '{dwg_path}' '{output_path}' ACAD2010 DXF 1"
-        subprocess.run(cmd, shell=True, check=True)
-        return True
-    except Exception:
-        return False
+def apply_offset(points_xy):
+    xs = [x for x, y in points_xy]
+    ys = [y for x, y in points_xy]
+    cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
+    return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
 
 def merge_with_template(template_path):
-    return ezdxf.readfile(template_path)
+    try:
+        return ezdxf.readfile(template_path)
+    except:
+        st.error("❌ Template bukan file DXF. DWG harus dikonversi ke DXF terlebih dahulu.")
+        return None
 
-def draw_to_template(doc, classified):
+def draw_to_template(doc, classified, boundaries):
     msp = doc.modelspace()
-    for hp in classified["HP_COVER"]:
-        x, y = latlon_to_xy(hp["latitude"], hp["longitude"])
-        msp.add_text(hp["name"], dxfattribs={"layer": "HP_COVER"}).set_pos((x, y), align='CENTER')
+    all_points_xy = []
+    for category in classified.values():
+        for p in category:
+            all_points_xy.append(latlon_to_xy(p['latitude'], p['longitude']))
+
+    if len(all_points_xy) == 0:
+        st.error("❌ Tidak ada titik ditemukan di KMZ!")
+        return None
+
+    shifted_points, (cx, cy) = apply_offset(all_points_xy)
+
+    idx = 0
+    for category_name, category in classified.items():
+        for i in range(len(category)):
+            category[i]['xy'] = shifted_points[idx]
+            idx += 1
+
+    for layer_name, data in classified.items():
+        for obj in data:
+            x, y = obj['xy']
+            if layer_name not in doc.layers:
+                doc.layers.add(name=layer_name)
+            msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+            msp.add_text(obj["name"], dxfattribs={"height": 1.5, "layer": layer_name}).set_pos((x + 2, y))
+
+    for polygon in boundaries:
+        shifted_polygon, _ = apply_offset(polygon)
+        msp.add_lwpolyline(shifted_polygon, close=True, dxfattribs={"layer": "BOUNDARY"})
+
     return doc
 
-# ------------------- PROSES KONVERSI -------------------
-if st.button("🚀 Convert"):
-    if kmz_file is None:
-        st.error("❌ Harap upload file KMZ!")
-    elif template_file is None:
-        st.error("❌ Harap upload file template DXF/DWG!")
-    else:
-        with st.spinner("⏳ Sedang memproses..."):
-            # Simpan file
-            kmz_path = "uploaded.kmz"
-            with open(kmz_path, "wb") as f:
-                f.write(kmz_file.read())
+# Streamlit UI
+st.title("🏗️ KMZ → DWG Converter")
+st.write("Konversi file KMZ menjadi DWG sesuai template AutoCAD.")
 
-            template_path = "template_input"
-            with open(template_path, "wb") as f:
-                f.write(template_file.read())
+uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
+uploaded_template = st.file_uploader("📂 Upload Template DXF", type=["dxf"])
 
-            # Jika DWG → konversi ke DXF
-            if template_file.name.lower().endswith(".dwg"):
-                st.warning("⚠ Template DWG terdeteksi. Mengonversi ke DXF...")
-                if not convert_dwg_to_dxf(template_path, "./"):
-                    st.error("❌ Gagal konversi DWG ke DXF! Pastikan ODA Converter terinstall.")
-                    st.stop()
-                template_path = "template_input.dxf"
+if uploaded_kmz and uploaded_template:
+    extract_dir = "temp_kmz"
+    os.makedirs(extract_dir, exist_ok=True)
+    output_dxf = "converted_output.dxf"
 
-            # Extract & parsing
-            extract_dir = "temp_kmz"
-            os.makedirs(extract_dir, exist_ok=True)
-            kml_path = extract_kmz(kmz_path, extract_dir)
-            points = parse_kml(kml_path)
-            classified = classify_points(points)
+    with st.spinner("🔍 Memproses data..."):
+        kml_path = extract_kmz(uploaded_kmz, extract_dir)
+        points = parse_kml(kml_path)
+        classified = classify_points(points)
+        boundaries = parse_boundaries(kml_path)
 
-            # Gabungkan dengan template
-            doc = merge_with_template(template_path)
-            doc = draw_to_template(doc, classified)
+        template_path = os.path.join("temp_template.dxf")
+        with open(template_path, "wb") as f:
+            f.write(uploaded_template.read())
 
-            # Simpan DXF
-            dxf_buffer = BytesIO()
-            doc.saveas(dxf_buffer)
-            dxf_buffer.seek(0)
+        doc = merge_with_template(template_path)
+        if doc:
+            updated_doc = draw_to_template(doc, classified, boundaries)
+            updated_doc.saveas(output_dxf)
 
-            # Convert DXF → DWG
-            dxf_output = "hasil.dxf"
-            with open(dxf_output, "wb") as f:
-                f.write(dxf_buffer.getvalue())
+    if os.path.exists(output_dxf):
+        st.success("✅ Konversi berhasil! DXF sudah digabung dengan template.")
+        with open(output_dxf, "rb") as f:
+            st.download_button("⬇️ Download DXF", f, file_name="output_with_template.dxf")
 
-            dwg_output = "hasil.dwg"
-            convert_dwg_to_dxf(dxf_output, "./")  # jika ODA tersedia, akan buat DWG
-
-            st.success("✅ Konversi berhasil!")
-            st.download_button("⬇️ Download DXF", data=dxf_buffer, file_name="hasil.dxf", mime="application/dxf")
-
-            if os.path.exists(dwg_output):
-                with open(dwg_output, "rb") as f:
-                    st.download_button("⬇️ Download DWG", data=f, file_name="hasil.dwg", mime="application/acad")
+        st.markdown("### 📊 Ringkasan Objek")
+        for layer_name, objs in classified.items():
+            st.write(f"- **{layer_name}**: {len(objs)} titik")
