@@ -4,13 +4,12 @@ import math
 import requests
 from xml.etree import ElementTree as ET
 import ezdxf
-from pyproj import Proj, transform
+from pyproj import Transformer
 
 HERE_API_KEY = "iWCrFicKYt9_AOCtg76h76MlqZkVTn94eHbBl_cE8m0"
 
-# Inisialisasi proyeksi UTM zona 60 dan WGS84
-wgs84 = Proj("epsg:4326")
-utm60 = Proj(proj='utm', zone=60, ellps='WGS84')
+# Transformer dari WGS84 ke UTM zona 60 Selatan (EPSG:32760)
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
@@ -69,20 +68,18 @@ def haversine(lat1, lon1, lat2, lon2):
 
 def classify_points(points):
     classified = {
-        "FDT": [], "FAT": [], "FAT_LAGI": [], "POLE": [],
-        "NEW_POLE": [], "EXISTING_POLE": [], "HP_COVER": []
+        "FDT": [], "FAT": [], "POLE": [], "HP_COVER": [],
+        "NEW_POLE": [], "EXISTING_POLE": []
     }
     for p in points:
         name = p['name'].upper()
         if "FDT" in name:
             classified["FDT"].append(p)
-        elif "FAT LAGI" in name:
-            classified["FAT_LAGI"].append(p)
         elif "FAT" in name:
             classified["FAT"].append(p)
         elif "HP" in name or "HOME" in name or "COVER" in name:
             classified["HP_COVER"].append(p)
-        elif "NEW POLE" in name or "7-3" in name:
+        elif "NEW POLE" in name:
             classified["NEW_POLE"].append(p)
         elif "EXISTING" in name or "EMR" in name:
             classified["EXISTING_POLE"].append(p)
@@ -91,7 +88,7 @@ def classify_points(points):
     return classified
 
 def latlon_to_xy(lat, lon):
-    x, y = transform(wgs84, utm60, lon, lat)
+    x, y = transformer.transform(lon, lat)
     return x, y
 
 def find_nearest_pole(hp, poles):
@@ -110,7 +107,13 @@ def get_bounds(points):
     return min(lats), min(lons), max(lats), max(lons)
 
 def fetch_roads_from_here(min_lat, min_lon, max_lat, max_lon):
-    return []  # Dummy sementara
+    url = (
+        f"https://vector.hereapi.com/v2/vectortiles/base/mc/14/tiles.json"
+        f"?apikey={HERE_API_KEY}"
+        f"&bbox={min_lat},{min_lon},{max_lat},{max_lon}"
+    )
+    response = requests.get(url)
+    return []
 
 def draw_boundaries(msp, boundaries):
     for polygon in boundaries:
@@ -122,16 +125,24 @@ def draw_dxf(classified, boundaries, road_lines, output_path):
     doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
 
-    # HP COVER
     hp_coords = []
+
     for hp in classified["HP_COVER"]:
         x, y = latlon_to_xy(hp["latitude"], hp["longitude"])
         hp_coords.append((x, y))
-        msp.add_text(hp['name'], dxfattribs={"layer": "FEATURE_LABEL"}).set_pos((x, y), align='CENTER')
+        size = 2
+        msp.add_lwpolyline([
+            (x, y),
+            (x + size, y),
+            (x + size, y + size),
+            (x, y + size),
+            (x, y)
+        ], close=True, dxfattribs={"layer": "FEATURE_LABEL"})
+
         nearest = find_nearest_pole(hp, classified["POLE"])
         if nearest:
             nx, ny = latlon_to_xy(nearest["latitude"], nearest["longitude"])
-            msp.add_line((x, y), (nx, ny), dxfattribs={"layer": "LABEL_CABEL"})
+            msp.add_line((x + size/2, y + size/2), (nx, ny), dxfattribs={"layer": "LABEL_CABEL"})
 
     if len(hp_coords) > 1:
         hp_coords_sorted = sorted(hp_coords, key=lambda k: (k[1], k[0]))
@@ -139,22 +150,29 @@ def draw_dxf(classified, boundaries, road_lines, output_path):
 
     draw_boundaries(msp, boundaries)
 
-    # Tambah teks untuk setiap kategori
-    for layer, points in {
-        "FDT": classified["FDT"],
-        "FAT": classified["FAT"],
-        "FAT_LAGI": classified["FAT_LAGI"],
-        "EXISTING": classified["EXISTING_POLE"],
-        "NEW_POLE": classified["NEW_POLE"]
-    }.items():
-        for p in points:
-            x, y = latlon_to_xy(p["latitude"], p["longitude"])
-            msp.add_text(p['name'], dxfattribs={"layer": layer}).set_pos((x, y), align='CENTER')
-
-    # Dummy jalan
     for line in road_lines:
         coords = [latlon_to_xy(lat, lon) for lat, lon in line]
         msp.add_lwpolyline(coords, dxfattribs={"layer": "JALAN_MAPS"})
+
+    for fat in classified["FAT"]:
+        x, y = latlon_to_xy(fat["latitude"], fat["longitude"])
+        msp.add_text(fat["name"], dxfattribs={"layer": "FAT"}).set_pos((x, y), align='CENTER')
+
+    for fdt in classified["FDT"]:
+        x, y = latlon_to_xy(fdt["latitude"], fdt["longitude"])
+        msp.add_text(fdt["name"], dxfattribs={"layer": "FDT"}).set_pos((x, y), align='CENTER')
+
+    for pole in classified["POLE"]:
+        x, y = latlon_to_xy(pole["latitude"], pole["longitude"])
+        msp.add_text(pole["name"], dxfattribs={"layer": "POLE"}).set_pos((x, y), align='CENTER')
+
+    for pole in classified["NEW_POLE"]:
+        x, y = latlon_to_xy(pole["latitude"], pole["longitude"])
+        msp.add_text(pole["name"], dxfattribs={"layer": "NEW_POLE"}).set_pos((x, y), align='CENTER')
+
+    for pole in classified["EXISTING_POLE"]:
+        x, y = latlon_to_xy(pole["latitude"], pole["longitude"])
+        msp.add_text(pole["name"], dxfattribs={"layer": "EXISTING_POLE"}).set_pos((x, y), align='CENTER')
 
     doc.saveas(output_path)
 
