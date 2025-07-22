@@ -106,7 +106,7 @@ def draw_dxf(classified, boundaries, output_path):
     msp = doc.modelspace()
 
     for p in classified["FDT"]:
-        name = p.get("name", "").strip()
+        name = str(p.get("name", "")).strip()
         if not name:
             continue
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
@@ -114,40 +114,43 @@ def draw_dxf(classified, boundaries, output_path):
         msp.add_lwpolyline([(x, y), (x+size, y), (x+size, y+size), (x, y+size), (x, y)], close=True, dxfattribs={"layer": "FDT"})
 
     for p in classified["FAT"]:
-        name = p.get("name", "").strip()
+        name = str(p.get("name", "")).strip()
         if not name:
             continue
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
         size = 3
         msp.add_lwpolyline([(x, y), (x+size, y), (x+size, y+size), (x, y+size), (x, y)], close=True, dxfattribs={"layer": "FAT"})
-        msp.add_text(name, dxfattribs={"layer": "FAT"}).set_pos((x, y+size+1), align='LEFT')
+        msp.add_text(name[:50], dxfattribs={"layer": "FAT"}).set_pos((x, y+size+1), align='LEFT')
 
     for p in classified["FAT_LAGI"]:
-        name = p.get("name", "").strip()
+        name = str(p.get("name", "")).strip()
         if not name:
             continue
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
         size = 3
         msp.add_lwpolyline([(x, y), (x+size, y), (x+size, y+size), (x, y+size), (x, y)], close=True, dxfattribs={"layer": "BA"})
-        msp.add_text(name, dxfattribs={"layer": "BA"}).set_pos((x, y+size+1), align='LEFT')
+        msp.add_text(name[:50], dxfattribs={"layer": "BA"}).set_pos((x, y+size+1), align='LEFT')
 
     for p in classified["POLE"]:
-        name = p.get("name", "").strip()
+        name = str(p.get("name", "")).strip()
         if not name:
             continue
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
-        msp.add_text(name, dxfattribs={"layer": "NP"}).set_pos((x, y), align='CENTER')
+        try:
+            msp.add_text(name[:50], dxfattribs={"layer": "NP"}).set_pos((x, y), align='CENTER')
+        except Exception as e:
+            print(f"⚠️ Gagal menambahkan teks '{name}' di POLE: {e}")
 
     for p in classified["EXISTING_POLE"]:
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
         msp.add_circle((x, y), radius=2, dxfattribs={"layer": "LINGKAR MERAH"})
 
     for p in classified["HP_COVER"]:
-        name = p.get("name", "").strip()
+        name = str(p.get("name", "")).strip()
         if not name:
             continue
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
-        msp.add_text(name, dxfattribs={"layer": "LABEL_CABEL"}).set_pos((x, y), align='LEFT')
+        msp.add_text(name[:50], dxfattribs={"layer": "LABEL_CABEL"}).set_pos((x, y), align='LEFT')
 
     draw_boundaries(msp, boundaries)
     doc.saveas(output_path)
