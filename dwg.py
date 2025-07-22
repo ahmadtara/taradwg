@@ -114,17 +114,17 @@ def draw_dxf(classified, boundaries, output_path):
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
         size = 3
         msp.add_lwpolyline([(x, y), (x+size, y), (x+size, y+size), (x, y+size), (x, y)], close=True, dxfattribs={"layer": "FAT"})
-        msp.add_text(p["name"], dxfattribs={"layer": "FAT"}).set_pos((x, y+size+1), align='LEFT')
+        msp.add_text(p.get("name", ""), dxfattribs={"layer": "FAT"}).set_pos((x, y+size+1), align='LEFT')
 
     for p in classified["FAT_LAGI"]:
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
         size = 3
         msp.add_lwpolyline([(x, y), (x+size, y), (x+size, y+size), (x, y+size), (x, y)], close=True, dxfattribs={"layer": "BA"})
-        msp.add_text(p["name"], dxfattribs={"layer": "BA"}).set_pos((x, y+size+1), align='LEFT')
+        msp.add_text(p.get("name", ""), dxfattribs={"layer": "BA"}).set_pos((x, y+size+1), align='LEFT')
 
     for p in classified["POLE"]:
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
-        msp.add_text(p["name"], dxfattribs={"layer": "NP"}).set_pos((x, y), align='CENTER')
+        msp.add_text(p.get("name", ""), dxfattribs={"layer": "NP"}).set_pos((x, y), align='CENTER')
 
     for p in classified["EXISTING_POLE"]:
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
@@ -132,7 +132,7 @@ def draw_dxf(classified, boundaries, output_path):
 
     for p in classified["HP_COVER"]:
         x, y = latlon_to_xy(p["latitude"], p["longitude"])
-        msp.add_text(p["name"], dxfattribs={"layer": "LABEL_CABEL"}).set_pos((x, y), align='LEFT')
+        msp.add_text(p.get("name", ""), dxfattribs={"layer": "LABEL_CABEL"}).set_pos((x, y), align='LEFT')
 
     draw_boundaries(msp, boundaries)
     doc.saveas(output_path)
