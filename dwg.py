@@ -1,19 +1,22 @@
+import streamlit as st
 import zipfile
 import os
 import math
-import requests
 from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
+from io import BytesIO
 
-HERE_API_KEY = "iWCrFicKYt9_AOCtg76h76MlqZkVTn94eHbBl_cE8m0"
+# Konfigurasi halaman
+st.set_page_config(page_title="KMZ ke DWG Converter", layout="wide")
 
-# Transformer dari WGS84 ke UTM zona 60 Selatan (EPSG:32760)
+# Transformer WGS84 -> UTM (zona 60S)
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-def extract_kmz(kmz_path, extract_dir):
-    with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
-        kmz_file.extractall(extract_dir)
+# ---------------- FUNCTIONS ----------------
+def extract_kmz(kmz_file, extract_dir):
+    with zipfile.ZipFile(kmz_file, 'r') as kmz:
+        kmz.extractall(extract_dir)
     return os.path.join(extract_dir, "doc.kml")
 
 def parse_kml(kml_path):
@@ -26,45 +29,13 @@ def parse_kml(kml_path):
         name = pm.find('kml:name', ns)
         coord = pm.find('.//kml:coordinates', ns)
         if name is not None and coord is not None:
-            name_text = name.text.strip()
-            coord_text = coord.text.strip()
-            lon, lat, *_ = coord_text.split(',')
+            lon, lat, *_ = coord.text.strip().split(',')
             points.append({
-                'name': name_text,
+                'name': name.text.strip(),
                 'latitude': float(lat),
                 'longitude': float(lon)
             })
     return points
-
-def parse_boundaries(kml_path):
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    tree = ET.parse(kml_path)
-    root = tree.getroot()
-    boundaries = []
-
-    for folder in root.findall(".//kml:Folder", ns):
-        name_tag = folder.find('kml:name', ns)
-        if name_tag is not None and name_tag.text.strip().upper() == "BOUNDARY":
-            placemarks = folder.findall(".//kml:Placemark", ns)
-            for pm in placemarks:
-                coords = pm.find('.//kml:coordinates', ns)
-                if coords is not None:
-                    coord_list = []
-                    for pair in coords.text.strip().split():
-                        lon, lat, *_ = map(float, pair.split(','))
-                        coord_list.append(latlon_to_xy(lat, lon))
-                    boundaries.append(coord_list)
-    return boundaries
-
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-    a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
 
 def classify_points(points):
     classified = {
@@ -77,115 +48,79 @@ def classify_points(points):
             classified["FDT"].append(p)
         elif "FAT" in name:
             classified["FAT"].append(p)
-        elif "HP" in name or "HOME" in name or "COVER" in name:
+        elif "HP" in name or "HOME" in name:
             classified["HP_COVER"].append(p)
         elif "NEW POLE" in name:
             classified["NEW_POLE"].append(p)
-        elif "EXISTING" in name or "EMR" in name:
+        elif "EXISTING" in name:
             classified["EXISTING_POLE"].append(p)
         elif "P" in name:
             classified["POLE"].append(p)
     return classified
 
 def latlon_to_xy(lat, lon):
-    x, y = transformer.transform(lon, lat)
-    return x, y
+    return transformer.transform(lon, lat)
 
-def find_nearest_pole(hp, poles):
-    nearest = None
-    min_dist = float('inf')
-    for p in poles:
-        d = haversine(hp['latitude'], hp['longitude'], p['latitude'], p['longitude'])
-        if d < min_dist:
-            min_dist = d
-            nearest = p
-    return nearest
+def merge_with_template(template_dwg):
+    doc = ezdxf.readfile(template_dwg)
+    return doc
 
-def get_bounds(points):
-    lats = [p["latitude"] for p in points]
-    lons = [p["longitude"] for p in points]
-    return min(lats), min(lons), max(lats), max(lons)
-
-def fetch_roads_from_here(min_lat, min_lon, max_lat, max_lon):
-    url = (
-        f"https://vector.hereapi.com/v2/vectortiles/base/mc/14/tiles.json"
-        f"?apikey={HERE_API_KEY}"
-        f"&bbox={min_lat},{min_lon},{max_lat},{max_lon}"
-    )
-    response = requests.get(url)
-    return []
-
-def draw_boundaries(msp, boundaries):
-    for polygon in boundaries:
-        if polygon[0] != polygon[-1]:
-            polygon.append(polygon[0])
-        msp.add_lwpolyline(polygon, close=True, dxfattribs={"layer": "FAT AREA"})
-
-def draw_dxf(classified, boundaries, road_lines, output_path):
-    doc = ezdxf.new(dxfversion='R2010')
+def add_points_to_dwg(doc, classified):
     msp = doc.modelspace()
+    for layer, points in classified.items():
+        for p in points:
+            x, y = latlon_to_xy(p['latitude'], p['longitude'])
+            msp.add_text(p["name"], dxfattribs={"layer": layer}).set_pos((x, y), align='CENTER')
+    return doc
 
-    hp_coords = []
+# ---------------- STREAMLIT UI ----------------
+st.title("📐 KMZ → DWG Converter")
+st.markdown("Konversi file **KMZ** menjadi **DWG** sesuai template AutoCAD.")
 
-    for hp in classified["HP_COVER"]:
-        x, y = latlon_to_xy(hp["latitude"], hp["longitude"])
-        hp_coords.append((x, y))
-        size = 2
-        msp.add_lwpolyline([
-            (x, y),
-            (x + size, y),
-            (x + size, y + size),
-            (x, y + size),
-            (x, y)
-        ], close=True, dxfattribs={"layer": "FEATURE_LABEL"})
+col1, col2 = st.columns(2)
 
-        nearest = find_nearest_pole(hp, classified["POLE"])
-        if nearest:
-            nx, ny = latlon_to_xy(nearest["latitude"], nearest["longitude"])
-            msp.add_line((x + size/2, y + size/2), (nx, ny), dxfattribs={"layer": "LABEL_CABEL"})
+with col1:
+    kmz_file = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 
-    if len(hp_coords) > 1:
-        hp_coords_sorted = sorted(hp_coords, key=lambda k: (k[1], k[0]))
-        msp.add_lwpolyline(hp_coords_sorted, dxfattribs={"layer": "JALUR_HP"})
+with col2:
+    template_dwg = st.file_uploader("📂 Upload Template DWG", type=["dwg"])
 
-    draw_boundaries(msp, boundaries)
+if kmz_file and template_dwg:
+    if st.button("🚀 Convert ke DWG"):
+        with st.spinner("Sedang memproses... Mohon tunggu"):
+            extract_dir = "temp_kmz"
+            os.makedirs(extract_dir, exist_ok=True)
 
-    for line in road_lines:
-        coords = [latlon_to_xy(lat, lon) for lat, lon in line]
-        msp.add_lwpolyline(coords, dxfattribs={"layer": "JALAN_MAPS"})
+            # Simpan KMZ sementara
+            kmz_path = os.path.join(extract_dir, "input.kmz")
+            with open(kmz_path, "wb") as f:
+                f.write(kmz_file.read())
 
-    for fat in classified["FAT"]:
-        x, y = latlon_to_xy(fat["latitude"], fat["longitude"])
-        msp.add_text(fat["name"], dxfattribs={"layer": "FAT"}).set_pos((x, y), align='CENTER')
+            # Simpan template DWG sementara
+            template_path = "template.dwg"
+            with open(template_path, "wb") as f:
+                f.write(template_dwg.read())
 
-    for fdt in classified["FDT"]:
-        x, y = latlon_to_xy(fdt["latitude"], fdt["longitude"])
-        msp.add_text(fdt["name"], dxfattribs={"layer": "FDT"}).set_pos((x, y), align='CENTER')
+            # Parsing KMZ
+            kml_path = extract_kmz(kmz_path, extract_dir)
+            points = parse_kml(kml_path)
+            classified = classify_points(points)
 
-    for pole in classified["POLE"]:
-        x, y = latlon_to_xy(pole["latitude"], pole["longitude"])
-        msp.add_text(pole["name"], dxfattribs={"layer": "POLE"}).set_pos((x, y), align='CENTER')
+            # Load template DWG
+            doc = merge_with_template(template_path)
 
-    for pole in classified["NEW_POLE"]:
-        x, y = latlon_to_xy(pole["latitude"], pole["longitude"])
-        msp.add_text(pole["name"], dxfattribs={"layer": "NEW_POLE"}).set_pos((x, y), align='CENTER')
+            # Tambah titik ke DWG
+            doc = add_points_to_dwg(doc, classified)
 
-    for pole in classified["EXISTING_POLE"]:
-        x, y = latlon_to_xy(pole["latitude"], pole["longitude"])
-        msp.add_text(pole["name"], dxfattribs={"layer": "EXISTING_POLE"}).set_pos((x, y), align='CENTER')
+            # Simpan ke memori untuk download
+            output_buffer = BytesIO()
+            doc.write(output_buffer)
+            output_buffer.seek(0)
 
-    doc.saveas(output_path)
-
-def convert_kmz_to_dwg(kmz_path, output_dwg):
-    extract_dir = "temp_kmz"
-    os.makedirs(extract_dir, exist_ok=True)
-    kml_path = extract_kmz(kmz_path, extract_dir)
-    points = parse_kml(kml_path)
-    classified = classify_points(points)
-    boundaries = parse_boundaries(kml_path)
-
-    min_lat, min_lon, max_lat, max_lon = get_bounds(points)
-    road_lines = fetch_roads_from_here(min_lat, min_lon, max_lat, max_lon)
-
-    draw_dxf(classified, boundaries, road_lines, output_dwg)
-    print(f"Saved DWG to {output_dwg}")
+            st.success("✅ Konversi selesai!")
+            st.download_button(
+                "⬇️ Download DWG Hasil",
+                data=output_buffer,
+                file_name="hasil_konversi.dwg",
+                mime="application/octet-stream"
+            )
