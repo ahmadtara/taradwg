@@ -5,7 +5,10 @@ import ezdxf
 import tempfile
 import os
 
-# Folder yang ingin diambil
+st.title("Konversi KML ke DXF (UTM 60S)")
+
+uploaded_file = st.file_uploader("Unggah file .kml", type=["kml"])
+
 target_folders = {
     'FDT',
     'NEW POLE 7-3',
@@ -15,13 +18,11 @@ target_folders = {
     'HP COVER'
 }
 
-# Transformer WGS84 ke UTM zone 60S (EPSG:32760)
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-def parse_kml(kml_file):
-    raw_data = kml_file.read()  # jangan decode utf-8, langsung bytes
+def parse_kml_from_bytes(kml_bytes):
     k = kml.KML()
-    k.from_string(raw_data)
+    k.from_string(kml_bytes)
 
     points = []
 
@@ -44,7 +45,7 @@ def parse_kml(kml_file):
     extract(k.features())
     return points
 
-def generate_dxf(data, output_path):
+def generate_dxf(data):
     doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
 
@@ -54,26 +55,24 @@ def generate_dxf(data, output_path):
         msp.add_point((x, y))
         msp.add_text(label, dxfattribs={'height': 2.5}).set_pos((x, y + 3), align='CENTER')
 
-    doc.saveas(output_path)
-
-# Streamlit UI
-st.title("Konversi KML ke DXF (UTM Zone 60S)")
-st.markdown("Unggah file `.kml` untuk diubah menjadi file AutoCAD `.dxf`.")
-
-uploaded_file = st.file_uploader("Pilih file KML", type=['kml'])
+    temp_dxf = tempfile.NamedTemporaryFile(delete=False, suffix=".dxf")
+    doc.saveas(temp_dxf.name)
+    return temp_dxf.name
 
 if uploaded_file:
     try:
-        data = parse_kml(uploaded_file)
+        kml_bytes = uploaded_file.read()
+        data = parse_kml_from_bytes(kml_bytes)
 
         if not data:
-            st.warning("Tidak ada Placemark yang ditemukan dalam folder target.")
+            st.warning("⚠️ Tidak ditemukan placemark dalam folder target.")
         else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmpfile:
-                generate_dxf(data, tmpfile.name)
-                with open(tmpfile.name, "rb") as f:
-                    st.success("✅ File DXF berhasil dibuat!")
-                    st.download_button("⬇️ Download DXF", f, file_name="output.dxf")
+            output_path = generate_dxf(data)
+            with open(output_path, "rb") as f:
+                st.success("✅ File DXF berhasil dibuat!")
+                st.download_button("📥 Download DXF", f, file_name="output.dxf")
+
+            os.unlink(output_path)
 
     except Exception as e:
         st.error(f"❌ Terjadi error saat memproses file:\n\n{e}")
