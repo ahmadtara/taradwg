@@ -1,75 +1,158 @@
 import streamlit as st
-from fastkml import kml
-from pyproj import Transformer
+import zipfile
+import os
+import math
+from xml.etree import ElementTree as ET
 import ezdxf
-import io
+from pyproj import Transformer
 
-# Folder target
-target_folders = {
-    'FDT',
-    'NEW POLE 7-3',
-    'NEW POLE 7-4',
-    'EXISTING POLE EMR 7-4',
-    'FAT',
-    'HP COVER'
-}
+st.set_page_config(page_title="KMZ → DWG Converter", layout="wide")
 
-# Setup UTM zone 60S transformer
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-def parse_kml_bytes(kml_bytes):
-    k = kml.KML()
-    k.from_string(kml_bytes)  # langsung pakai bytes, BUKAN .decode()
+# Fungsi extract KMZ
+def extract_kmz(kmz_path, extract_dir):
+    with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
+        kmz_file.extractall(extract_dir)
+    return os.path.join(extract_dir, "doc.kml")
+
+def parse_kml(kml_path):
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    tree = ET.parse(kml_path)
+    root = tree.getroot()
+    placemarks = root.findall('.//kml:Placemark', ns)
     points = []
-
-    def extract(features):
-        for f in features:
-            if hasattr(f, 'features'):
-                fname = f.name.strip() if f.name else ""
-                if fname in target_folders:
-                    for placemark in f.features():
-                        if hasattr(placemark, 'geometry') and placemark.geometry.geom_type == 'Point':
-                            lon, lat = placemark.geometry.x, placemark.geometry.y
-                            easting, northing = transformer.transform(lon, lat)
-                            points.append({
-                                'folder': fname,
-                                'placemark': placemark.name,
-                                'easting': round(easting, 3),
-                                'northing': round(northing, 3)
-                            })
-                extract(f.features())
-
-    extract(k.features())
+    for pm in placemarks:
+        name = pm.find('kml:name', ns)
+        coord = pm.find('.//kml:coordinates', ns)
+        if name is not None and coord is not None:
+            name_text = name.text.strip()
+            lon, lat, *_ = coord.text.strip().split(',')
+            points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon)})
     return points
 
-def generate_dxf(data):
-    doc = ezdxf.new(dxfversion='R2010')
+def parse_boundaries(kml_path):
+    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+    tree = ET.parse(kml_path)
+    root = tree.getroot()
+    boundaries = []
+    for folder in root.findall(".//kml:Folder", ns):
+        name_tag = folder.find('kml:name', ns)
+        if name_tag is not None and name_tag.text.strip().upper() == "BOUNDARY":
+            placemarks = folder.findall(".//kml:Placemark", ns)
+            for pm in placemarks:
+                coords = pm.find('.//kml:coordinates', ns)
+                if coords is not None:
+                    coord_list = []
+                    for pair in coords.text.strip().split():
+                        lon, lat, *_ = map(float, pair.split(','))
+                        coord_list.append(latlon_to_xy(lat, lon))
+                    boundaries.append(coord_list)
+    return boundaries
+
+def classify_points(points):
+    classified = {
+        "FDT": [], "FAT": [], "POLE": [], "HP_COVER": [],
+        "NEW_POLE": [], "EXISTING_POLE": []
+    }
+    for p in points:
+        name = p['name'].upper()
+        if "FDT" in name:
+            classified["FDT"].append(p)
+        elif "FAT" in name:
+            classified["FAT"].append(p)
+        elif "HP" in name or "HOME" in name or "COVER" in name:
+            classified["HP_COVER"].append(p)
+        elif "NEW POLE" in name:
+            classified["NEW_POLE"].append(p)
+        elif "EXISTING" in name or "EMR" in name:
+            classified["EXISTING_POLE"].append(p)
+        elif "P" in name:
+            classified["POLE"].append(p)
+    return classified
+
+def latlon_to_xy(lat, lon):
+    x, y = transformer.transform(lon, lat)
+    return x, y
+
+def apply_offset(points_xy):
+    xs = [x for x, y in points_xy]
+    ys = [y for x, y in points_xy]
+    cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
+    return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
+
+def merge_with_template(template_path):
+    try:
+        return ezdxf.readfile(template_path)
+    except:
+        st.error("❌ Template bukan file DXF. DWG harus dikonversi ke DXF terlebih dahulu.")
+        return None
+
+def draw_to_template(doc, classified, boundaries):
     msp = doc.modelspace()
-    for item in data:
-        x, y = item['easting'], item['northing']
-        label = f"{item['placemark']}\n({item['folder']})"
-        msp.add_point((x, y))
-        msp.add_text(label, dxfattribs={'height': 2.5}).set_pos((x, y + 3), align='CENTER')
-    buffer = io.BytesIO()
-    doc.write(buffer)
-    buffer.seek(0)
-    return buffer
+    all_points_xy = []
+    for category in classified.values():
+        for p in category:
+            all_points_xy.append(latlon_to_xy(p['latitude'], p['longitude']))
+
+    if len(all_points_xy) == 0:
+        st.error("❌ Tidak ada titik ditemukan di KMZ!")
+        return None
+
+    shifted_points, (cx, cy) = apply_offset(all_points_xy)
+
+    idx = 0
+    for category_name, category in classified.items():
+        for i in range(len(category)):
+            category[i]['xy'] = shifted_points[idx]
+            idx += 1
+
+    for layer_name, data in classified.items():
+        for obj in data:
+            x, y = obj['xy']
+            if layer_name not in doc.layers:
+                doc.layers.add(name=layer_name)
+            msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+            msp.add_text(obj["name"], dxfattribs={"height": 1.5, "layer": layer_name}).set_pos((x + 2, y))
+
+    for polygon in boundaries:
+        shifted_polygon, _ = apply_offset(polygon)
+        msp.add_lwpolyline(shifted_polygon, close=True, dxfattribs={"layer": "BOUNDARY"})
+
+    return doc
 
 # Streamlit UI
-st.title("📍 Konversi KML ke DXF (UTM Zone 60S)")
+st.title("🏗️ KMZ → DWG Converter")
+st.write("Konversi file KMZ menjadi DWG sesuai template AutoCAD.")
 
-uploaded_file = st.file_uploader("📤 Upload file .kml kamu di sini", type=["kml"])
+uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
+uploaded_template = st.file_uploader("📂 Upload Template DXF", type=["dxf"])
 
-if uploaded_file is not None:
-    try:
-        kml_bytes = uploaded_file.read()
-        data = parse_kml_bytes(kml_bytes)
+if uploaded_kmz and uploaded_template:
+    extract_dir = "temp_kmz"
+    os.makedirs(extract_dir, exist_ok=True)
+    output_dxf = "converted_output.dxf"
 
-        if not data:
-            st.warning("⚠️ Tidak ditemukan placemark dalam folder target.")
-        else:
-            dxf_buffer = generate_dxf(data)
-            st.success("✅ File DXF berhasil dibuat!")
-            st.download_button("⬇️ Download DXF", dxf_buffer, file_name="output.dxf", mime="application/dxf")
-    except Exception as e:
-        st.error(f"❌ Terjadi error saat memproses file:\n\n{e}")
+    with st.spinner("🔍 Memproses data..."):
+        kml_path = extract_kmz(uploaded_kmz, extract_dir)
+        points = parse_kml(kml_path)
+        classified = classify_points(points)
+        boundaries = parse_boundaries(kml_path)
+
+        template_path = os.path.join("temp_template.dxf")
+        with open(template_path, "wb") as f:
+            f.write(uploaded_template.read())
+
+        doc = merge_with_template(template_path)
+        if doc:
+            updated_doc = draw_to_template(doc, classified, boundaries)
+            updated_doc.saveas(output_dxf)
+
+    if os.path.exists(output_dxf):
+        st.success("✅ Konversi berhasil! DXF sudah digabung dengan template.")
+        with open(output_dxf, "rb") as f:
+            st.download_button("⬇️ Download DXF", f, file_name="output_with_template.dxf")
+
+        st.markdown("### 📊 Ringkasan Objek")
+        for layer_name, objs in classified.items():
+            st.write(f"- **{layer_name}**: {len(objs)} titik")
