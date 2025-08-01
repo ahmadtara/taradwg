@@ -1,13 +1,13 @@
-import streamlit as st
+import streamlit as st 
 import zipfile
 import os
-import math
 from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DWG Converter", layout="wide")
+st.set_page_config(page_title="KMZ → DXF Converter", layout="wide")
 
+# Konversi lat/lon ke UTM zona 60S
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
 def extract_kmz(kmz_path, extract_dir):
@@ -17,7 +17,7 @@ def extract_kmz(kmz_path, extract_dir):
 
 def parse_kml(kml_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    with open(kml_path, 'rb') as f:  # Gunakan binary mode untuk hindari encoding error
+    with open(kml_path, 'rb') as f:
         tree = ET.parse(f)
     root = tree.getroot()
     placemarks = root.findall('.//kml:Placemark', ns)
@@ -64,7 +64,7 @@ def classify_points(points):
             classified["FAT"].append(p)
         elif "HP" in name or "HOME" in name or "COVER" in name:
             classified["HP_COVER"].append(p)
-        elif "NEW POLE" in name:
+        elif "NEW POLE" in name or "NEW" in name:
             classified["NEW_POLE"].append(p)
         elif "EXISTING" in name or "EMR" in name:
             classified["EXISTING_POLE"].append(p)
@@ -82,14 +82,11 @@ def apply_offset(points_xy):
     cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
     return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
 
-def merge_with_template(template_path):
-    try:
-        return ezdxf.readfile(template_path)
-    except:
-        st.error("❌ Template bukan file DXF. DWG harus dikonversi ke DXF terlebih dahulu.")
-        return None
+def create_blank_dxf():
+    doc = ezdxf.new(dxfversion='R2010')
+    return doc
 
-def draw_to_template(doc, classified, boundaries):
+def draw_to_dxf(doc, classified, boundaries):
     msp = doc.modelspace()
     all_points_xy = []
     for category in classified.values():
@@ -116,9 +113,8 @@ def draw_to_template(doc, classified, boundaries):
             msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
             msp.add_text(obj["name"], dxfattribs={
                 "height": 1.5,
-                "layer": layer_name,
-                "insert": (x + 2, y)  # ← posisi teks diperbaiki di sini
-            })
+                "layer": layer_name
+            }).set_pos((x + 2, y))
 
     for polygon in boundaries:
         shifted_polygon, _ = apply_offset(polygon)
@@ -127,13 +123,12 @@ def draw_to_template(doc, classified, boundaries):
     return doc
 
 # Streamlit UI
-st.title("🏗️ KMZ → DWG Converter")
-st.write("Konversi file KMZ menjadi DWG sesuai template AutoCAD.")
+st.title("🏗️ KMZ → DXF Converter")
+st.write("Konversi file KMZ menjadi DXF AutoCAD.")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📂 Upload Template DXF", type=["dxf"])
 
-if uploaded_kmz and uploaded_template:
+if uploaded_kmz:
     extract_dir = "temp_kmz"
     os.makedirs(extract_dir, exist_ok=True)
     output_dxf = "converted_output.dxf"
@@ -144,20 +139,15 @@ if uploaded_kmz and uploaded_template:
         classified = classify_points(points)
         boundaries = parse_boundaries(kml_path)
 
-        template_path = os.path.join("temp_template.dxf")
-        with open(template_path, "wb") as f:
-            f.write(uploaded_template.read())
-
-        doc = merge_with_template(template_path)
-        if doc:
-            updated_doc = draw_to_template(doc, classified, boundaries)
-            if updated_doc:
-                updated_doc.saveas(output_dxf)
+        doc = create_blank_dxf()
+        updated_doc = draw_to_dxf(doc, classified, boundaries)
+        if updated_doc:
+            updated_doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF sudah digabung dengan template.")
+        st.success("✅ Konversi berhasil! DXF berhasil dibuat.")
         with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name="output_with_template.dxf")
+            st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
 
         st.markdown("### 📊 Ringkasan Objek")
         for layer_name, objs in classified.items():
