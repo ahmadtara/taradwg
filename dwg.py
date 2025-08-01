@@ -1,14 +1,19 @@
 import streamlit as st 
 import zipfile
 import os
+import math
 from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter", layout="wide")
+st.set_page_config(page_title="KMZ → DWG Converter", layout="wide")
 
-# Konversi lat/lon ke UTM zona 60S
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+
+# Folder target yang akan diklasifikasikan
+target_folders = {
+    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4'
+}
 
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
@@ -20,15 +25,23 @@ def parse_kml(kml_path):
     with open(kml_path, 'rb') as f:
         tree = ET.parse(f)
     root = tree.getroot()
-    placemarks = root.findall('.//kml:Placemark', ns)
+    folders = root.findall('.//kml:Folder', ns)
     points = []
-    for pm in placemarks:
-        name = pm.find('kml:name', ns)
-        coord = pm.find('.//kml:coordinates', ns)
-        if name is not None and coord is not None:
-            name_text = name.text.strip()
-            lon, lat, *_ = coord.text.strip().split(',')
-            points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon)})
+    for folder in folders:
+        folder_name_tag = folder.find('kml:name', ns)
+        if folder_name_tag is None:
+            continue
+        folder_name = folder_name_tag.text.strip().upper()
+        if folder_name not in target_folders:
+            continue
+        placemarks = folder.findall('.//kml:Placemark', ns)
+        for pm in placemarks:
+            name = pm.find('kml:name', ns)
+            coord = pm.find('.//kml:coordinates', ns)
+            if name is not None and coord is not None:
+                name_text = name.text.strip()
+                lon, lat, *_ = coord.text.strip().split(',')
+                points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon), 'folder': folder_name})
     return points
 
 def parse_boundaries(kml_path):
@@ -51,27 +64,6 @@ def parse_boundaries(kml_path):
                     boundaries.append(coord_list)
     return boundaries
 
-def classify_points(points):
-    classified = {
-        "FDT": [], "FAT": [], "POLE": [], "HP_COVER": [],
-        "NEW_POLE": [], "EXISTING_POLE": []
-    }
-    for p in points:
-        name = p['name'].upper()
-        if "FDT" in name:
-            classified["FDT"].append(p)
-        elif "FAT" in name:
-            classified["FAT"].append(p)
-        elif "HP" in name or "HOME" in name or "COVER" in name:
-            classified["HP_COVER"].append(p)
-        elif "NEW POLE" in name or "NEW" in name:
-            classified["NEW_POLE"].append(p)
-        elif "EXISTING" in name or "EMR" in name:
-            classified["EXISTING_POLE"].append(p)
-        elif "P" in name:
-            classified["POLE"].append(p)
-    return classified
-
 def latlon_to_xy(lat, lon):
     x, y = transformer.transform(lon, lat)
     return x, y
@@ -82,12 +74,31 @@ def apply_offset(points_xy):
     cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
     return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
 
-def create_blank_dxf():
-    doc = ezdxf.new(dxfversion='R2010')
-    return doc
+def classify_points(points):
+    classified = {
+        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
+    }
+    for p in points:
+        name = p['name'].upper()
+        folder = p['folder']
+        if "FDT" in folder:
+            classified["FDT"].append(p)
+        elif "FAT" in folder:
+            classified["FAT"].append(p)
+        elif "HP COVER" in folder:
+            classified["HP_COVER"].append(p)
+        elif "NEW POLE" in folder:
+            classified["NEW_POLE"].append(p)
+        elif "EXISTING" in folder or "EMR" in folder:
+            classified["EXISTING_POLE"].append(p)
+        else:
+            classified["POLE"].append(p)
+    return classified
 
-def draw_to_dxf(doc, classified, boundaries):
+def draw_to_dxf(classified, boundaries):
+    doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
+
     all_points_xy = []
     for category in classified.values():
         for p in category:
@@ -113,8 +124,9 @@ def draw_to_dxf(doc, classified, boundaries):
             msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
             msp.add_text(obj["name"], dxfattribs={
                 "height": 1.5,
-                "layer": layer_name
-            }).set_pos((x + 2, y))
+                "layer": layer_name,
+                "insert": (x + 2, y)  # ← posisi teks langsung di sini
+            })
 
     for polygon in boundaries:
         shifted_polygon, _ = apply_offset(polygon)
@@ -123,8 +135,8 @@ def draw_to_dxf(doc, classified, boundaries):
     return doc
 
 # Streamlit UI
-st.title("🏗️ KMZ → DXF Converter")
-st.write("Konversi file KMZ menjadi DXF AutoCAD.")
+st.title("🏗️ KMZ → DXF Converter (No Template)")
+st.write("Konversi file KMZ menjadi file DXF langsung tanpa upload template.")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 
@@ -139,13 +151,12 @@ if uploaded_kmz:
         classified = classify_points(points)
         boundaries = parse_boundaries(kml_path)
 
-        doc = create_blank_dxf()
-        updated_doc = draw_to_dxf(doc, classified, boundaries)
+        updated_doc = draw_to_dxf(classified, boundaries)
         if updated_doc:
             updated_doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF berhasil dibuat.")
+        st.success("✅ Konversi berhasil! DXF sudah dibuat.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
 
