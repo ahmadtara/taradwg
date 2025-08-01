@@ -10,7 +10,6 @@ st.set_page_config(page_title="KMZ → DWG Converter", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-# Fungsi extract KMZ
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
         kmz_file.extractall(extract_dir)
@@ -18,7 +17,8 @@ def extract_kmz(kmz_path, extract_dir):
 
 def parse_kml(kml_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    tree = ET.parse(kml_path)
+    with open(kml_path, 'rb') as f:  # Gunakan binary mode untuk hindari encoding error
+        tree = ET.parse(f)
     root = tree.getroot()
     placemarks = root.findall('.//kml:Placemark', ns)
     points = []
@@ -33,7 +33,8 @@ def parse_kml(kml_path):
 
 def parse_boundaries(kml_path):
     ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    tree = ET.parse(kml_path)
+    with open(kml_path, 'rb') as f:
+        tree = ET.parse(f)
     root = tree.getroot()
     boundaries = []
     for folder in root.findall(".//kml:Folder", ns):
@@ -108,12 +109,16 @@ def draw_to_template(doc, classified, boundaries):
             idx += 1
 
     for layer_name, data in classified.items():
+        if layer_name not in doc.layers:
+            doc.layers.add(name=layer_name)
         for obj in data:
             x, y = obj['xy']
-            if layer_name not in doc.layers:
-                doc.layers.add(name=layer_name)
             msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
-            msp.add_text(obj["name"], dxfattribs={"height": 1.5, "layer": layer_name}).set_pos((x + 2, y))
+            msp.add_text(obj["name"], dxfattribs={
+                "height": 1.5,
+                "layer": layer_name,
+                "insert": (x + 2, y)  # ← posisi teks diperbaiki di sini
+            })
 
     for polygon in boundaries:
         shifted_polygon, _ = apply_offset(polygon)
@@ -146,7 +151,8 @@ if uploaded_kmz and uploaded_template:
         doc = merge_with_template(template_path)
         if doc:
             updated_doc = draw_to_template(doc, classified, boundaries)
-            updated_doc.saveas(output_dxf)
+            if updated_doc:
+                updated_doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
         st.success("✅ Konversi berhasil! DXF sudah digabung dengan template.")
