@@ -2,10 +2,10 @@ import streamlit as st
 from fastkml import kml
 from pyproj import Transformer
 import ezdxf
-import tempfile
-import os
+import io
+import base64
 
-# Set folder target
+# Folder yang ingin diambil
 target_folders = {
     'FDT',
     'NEW POLE 7-3',
@@ -15,12 +15,19 @@ target_folders = {
     'HP COVER'
 }
 
-# Transformer dari WGS84 ke UTM zona 60S (EPSG:32760 = UTM zona 60S)
+# Transformer: WGS84 ke UTM Zona 60S
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
+# Fungsi parsing file .kml
 def parse_kml(kml_file):
+    raw_data = kml_file.getvalue()
+    try:
+        text = raw_data.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw_data.decode("latin-1")
+
     k = kml.KML()
-    k.from_string(kml_file.read().decode("utf-8"))
+    k.from_string(text)
 
     points = []
 
@@ -44,6 +51,7 @@ def parse_kml(kml_file):
     extract(k.features())
     return points
 
+# Fungsi generate file .dxf
 def generate_dxf(data):
     doc = ezdxf.new(dxfversion='R2010')
     msp = doc.modelspace()
@@ -54,27 +62,31 @@ def generate_dxf(data):
         msp.add_point((x, y))
         msp.add_text(label, dxfattribs={'height': 2.5}).set_pos((x, y + 3), align='CENTER')
 
-    # Simpan ke file sementara
-    temp_dxf = tempfile.NamedTemporaryFile(delete=False, suffix=".dxf")
-    doc.saveas(temp_dxf.name)
-    return temp_dxf.name
+    buffer = io.BytesIO()
+    doc.saveas(buffer)
+    buffer.seek(0)
+    return buffer
 
 # Streamlit UI
-st.title("Konversi KML ke DXF (UTM 60S)")
-uploaded_file = st.file_uploader("Upload file .kml", type=["kml"])
+st.title("📐 Konversi KML ke DXF (UTM Zona 60S)")
+st.markdown("Upload file `.kml`, program akan mengambil titik dari folder tertentu dan mengonversi ke file AutoCAD `.dxf`.")
+
+uploaded_file = st.file_uploader("📤 Upload file .kml", type=["kml"])
 
 if uploaded_file:
-    with st.spinner("🔄 Memproses file..."):
+    try:
         data = parse_kml(uploaded_file)
+
         if not data:
-            st.warning("⚠️ Tidak ditemukan titik dalam folder target.")
+            st.warning("⚠️ Tidak ada placemark ditemukan dalam folder target.")
         else:
-            dxf_path = generate_dxf(data)
-            with open(dxf_path, "rb") as f:
-                st.success("✅ Berhasil dikonversi ke DXF!")
-                st.download_button(
-                    label="⬇️ Download DXF",
-                    data=f,
-                    file_name=os.path.basename(dxf_path),
-                    mime="application/dxf"
-                )
+            st.success(f"✅ Ditemukan {len(data)} titik dari folder target.")
+            dxf_bytes = generate_dxf(data)
+            st.download_button(
+                label="⬇️ Download File DXF",
+                data=dxf_bytes,
+                file_name="output_kml_to_dxf.dxf",
+                mime="application/dxf"
+            )
+    except Exception as e:
+        st.error(f"❌ Terjadi error saat memproses file:\n```\n{str(e)}\n```")
