@@ -3,3 +3,4 @@ ezdxf
 pyproj
 requests
 lxml
+fastkml
