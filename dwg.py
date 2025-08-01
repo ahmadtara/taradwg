@@ -20,10 +20,9 @@ target_folders = {
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-def parse_kml_from_bytes(kml_bytes):
+def parse_kml_from_file(file_obj):
     k = kml.KML()
-    k.from_string(kml_bytes)
-
+    k.from_file(file_obj)  # Langsung dari file-like object
     points = []
 
     def extract(features):
@@ -61,8 +60,7 @@ def generate_dxf(data):
 
 if uploaded_file:
     try:
-        kml_bytes = uploaded_file.read()
-        data = parse_kml_from_bytes(kml_bytes)
+        data = parse_kml_from_file(uploaded_file)
 
         if not data:
             st.warning("⚠️ Tidak ditemukan placemark dalam folder target.")
@@ -71,7 +69,6 @@ if uploaded_file:
             with open(output_path, "rb") as f:
                 st.success("✅ File DXF berhasil dibuat!")
                 st.download_button("📥 Download DXF", f, file_name="output.dxf")
-
             os.unlink(output_path)
 
     except Exception as e:
