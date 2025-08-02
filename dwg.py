@@ -1,11 +1,11 @@
-import streamlit as st 
+import streamlit as st
 import zipfile
 import os
 from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter", layout="wide")
+st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
@@ -57,7 +57,6 @@ def classify_points(points):
         "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
     }
     for p in points:
-        name = p['name'].upper()
         folder = p['folder']
         if "FDT" in folder:
             classified["FDT"].append(p)
@@ -73,16 +72,33 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
-def draw_to_dxf(classified):
+def draw_to_dxf(classified, template_path):
+    # Muat template DXF
+    template_doc = ezdxf.readfile(template_path)
+    template_msp = template_doc.modelspace()
+
+    # Ambil contoh teks untuk matchprop
+    matchprop_hp = None
+    matchprop_pole = None
+    for e in template_msp.query('TEXT'):
+        txt = e.dxf.text.upper()
+        if 'NN' in txt:
+            matchprop_hp = e.dxf
+        elif 'MR' in txt:
+            matchprop_pole = e.dxf
+        if matchprop_hp and matchprop_pole:
+            break
+
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
+    # Kumpulkan semua titik untuk offset
     all_points_xy = []
     for category in classified.values():
         for p in category:
             all_points_xy.append(latlon_to_xy(p['latitude'], p['longitude']))
 
-    if len(all_points_xy) == 0:
+    if not all_points_xy:
         st.error("❌ Tidak ada titik ditemukan di KMZ!")
         return None
 
@@ -99,37 +115,48 @@ def draw_to_dxf(classified):
             doc.layers.add(name=layer_name)
         for obj in data:
             x, y = obj['xy']
-            
-            # ⛔️ Hapus lingkaran khusus HP COVER
+
+            # Lingkaran di HP COVER tidak digambar
             if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
-            
-            # ✅ Tambah teks untuk semua layer
-            msp.add_text(obj["name"], dxfattribs={
-                "height": 1.5,
-                "layer": layer_name,
-                "insert": (x + 2, y)
-            })
+
+            # Tentukan matchprop
+            matchprop = matchprop_hp if layer_name == "HP_COVER" else matchprop_pole
+            if matchprop:
+                attribs = {
+                    "height": matchprop.height,
+                    "layer": layer_name,
+                    "color": matchprop.color,
+                    "insert": (x + 2, y)
+                }
+            else:
+                attribs = {"height": 1.5, "layer": layer_name, "insert": (x + 2, y)}
+
+            msp.add_text(obj["name"], dxfattribs=attribs)
 
     return doc
 
 # Streamlit UI
-st.title("🏗️ KMZ → DXF Converter (No Polygon, Only Text on HP COVER)")
-st.write("Konversi file KMZ menjadi file DXF langsung tanpa upload template, tanpa garis boundary, dan tanpa lingkaran pada HP COVER.")
+st.title("🏗️ KMZ → DXF Converter with Matchprop")
+st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
+uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
 
-if uploaded_kmz:
+if uploaded_kmz and uploaded_template:
     extract_dir = "temp_kmz"
     os.makedirs(extract_dir, exist_ok=True)
     output_dxf = "converted_output.dxf"
+
+    with open("template_ref.dxf", "wb") as f:
+        f.write(uploaded_template.read())
 
     with st.spinner("🔍 Memproses data..."):
         kml_path = extract_kmz(uploaded_kmz, extract_dir)
         points = parse_kml(kml_path)
         classified = classify_points(points)
 
-        updated_doc = draw_to_dxf(classified)
+        updated_doc = draw_to_dxf(classified, "template_ref.dxf")
         if updated_doc:
             updated_doc.saveas(output_dxf)
 
