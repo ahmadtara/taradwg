@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import zipfile
 import os
 from xml.etree import ElementTree as ET
@@ -92,12 +92,12 @@ def draw_to_dxf(classified, template_path):
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
-    # ✅ Salin block NW dari template ke dokumen output
+    # Salin block NW dari template
     if "NW" in template_doc.blocks:
-        source_block = template_doc.blocks.get("NW")
-        dest_block = doc.blocks.new(name="NW", base_point=source_block.block.dxf.base_point)
-        for entity in source_block:
-            dest_block.add_entity(entity.copy())
+        block_nw = template_doc.blocks.get("NW")
+        doc.blocks.new(name="NW", base_point=block_nw.block.dxf.base_point)
+        for entity in block_nw:
+            doc.blocks.get("NW").add_entity(entity.copy())
     else:
         st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
 
@@ -124,20 +124,19 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            # Tambahkan block NW jika POLE
-            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
-                try:
-                    msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
-                except Exception as e:
-                    st.error(f"❌ Gagal insert block NW: {e}")
-            elif layer_name != "HP_COVER":
+            if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tambahkan teks semua titik
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 matchprop = matchprop_pole
+                # Tambahkan block NW
+                try:
+                    if "NW" in doc.blocks:
+                        msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+                except Exception as e:
+                    st.error(f"❌ Gagal insert block NW: {e}")
             elif layer_name in ["FAT", "FDT"]:
                 matchprop = matchprop_sr
             else:
