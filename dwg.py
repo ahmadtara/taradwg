@@ -72,18 +72,6 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
-def copy_all_blocks(template_doc, target_doc):
-    for block_name in template_doc.blocks.block_names():
-        if block_name.startswith("*"):
-            continue
-        if block_name in target_doc.blocks:
-            continue
-        source_block = template_doc.blocks[block_name]
-        new_block = target_doc.blocks.new(name=block_name)
-        for entity in source_block:
-            new_block.add_entity(entity.copy())
-        new_block.block.dxf.base_point = source_block.block.dxf.base_point
-
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
@@ -104,10 +92,11 @@ def draw_to_dxf(classified, template_path):
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
-    # Salin semua block dari template
-    copy_all_blocks(template_doc, doc)
+    all_points_xy = []
+    for category in classified.values():
+        for p in category:
+            all_points_xy.append(latlon_to_xy(p['latitude'], p['longitude']))
 
-    all_points_xy = [latlon_to_xy(p['latitude'], p['longitude']) for category in classified.values() for p in category]
     if not all_points_xy:
         st.error("❌ Tidak ada titik ditemukan di KMZ!")
         return None
@@ -126,10 +115,8 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            if layer_name == "NEW_POLE":
-                if "NW" in doc.blocks:
-                    msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
-            else:
+            # ❌ Jangan gambar circle jika dari folder target_folders
+            if obj['folder'] not in target_folders:
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
             if layer_name == "HP_COVER":
@@ -155,9 +142,8 @@ def draw_to_dxf(classified, template_path):
 
     return doc
 
-# Streamlit UI
 st.title("🏗️ KMZ → DXF Converter with Matchprop")
-st.write("Konversi file KMZ menjadi DXF dengan properti teks dan block dari template.")
+st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
