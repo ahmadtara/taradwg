@@ -10,7 +10,7 @@ st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wi
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
 target_folders = {
-    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4'
+    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3'
 }
 
 def extract_kmz(kmz_path, extract_dir):
@@ -73,18 +73,17 @@ def classify_points(points):
     return classified
 
 def draw_to_dxf(classified, template_path):
-    # Muat template DXF
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
-    # Ambil contoh teks untuk matchprop
+    # Matchprop berdasarkan isi teks
     matchprop_hp = None
     matchprop_pole = None
     for e in template_msp.query('TEXT'):
         txt = e.dxf.text.upper()
-        if 'NN' in txt:
+        if 'NN-25' in txt:
             matchprop_hp = e.dxf
-        elif 'MR' in txt:
+        elif 'MR.SRMRW16' in txt:
             matchprop_pole = e.dxf
         if matchprop_hp and matchprop_pole:
             break
@@ -92,7 +91,6 @@ def draw_to_dxf(classified, template_path):
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
-    # Kumpulkan semua titik untuk offset
     all_points_xy = []
     for category in classified.values():
         for p in category:
@@ -115,12 +113,9 @@ def draw_to_dxf(classified, template_path):
             doc.layers.add(name=layer_name)
         for obj in data:
             x, y = obj['xy']
-
-            # Lingkaran di HP COVER tidak digambar
             if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tentukan matchprop
             matchprop = matchprop_hp if layer_name == "HP_COVER" else matchprop_pole
             if matchprop:
                 attribs = {
@@ -136,7 +131,6 @@ def draw_to_dxf(classified, template_path):
 
     return doc
 
-# Streamlit UI
 st.title("🏗️ KMZ → DXF Converter with Matchprop")
 st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
 
