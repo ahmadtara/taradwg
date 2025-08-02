@@ -15,13 +15,6 @@ target_folders = {
     'BOUNDARY', 'DISTRIBUTION CABLE', 'SLING WIRE'
 }
 
-# Mapping folder KMZ -> Layer template
-folder_to_layer = {
-    "BOUNDARY": "FAT AREA",
-    "DISTRIBUTION_CABLE": "FO 36 CORE",
-    "SLING_WIRE": "FO STRAND AE"
-}
-
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
         kmz_file.extractall(extract_dir)
@@ -182,19 +175,18 @@ def draw_to_template(classified, template_path):
                     matchprop = None
                 attribs = {
                     "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
-                    "layer": folder_to_layer.get(layer_name, layer_name),  # mapping untuk point
+                    "layer": layer_name,
                     "insert": (x + 2, y)
                 }
                 msp.add_text(obj["name"], dxfattribs=attribs)
 
             elif obj['type'] == 'path':
-                # Gunakan mapping layer untuk path
-                layer_target = folder_to_layer.get(layer_name, layer_name)
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_target})
+                # Path langsung ikut properti layer BYLAYER
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
 
     return doc
 
-st.title("🏗️ KMZ → DXF (Masuk ke Template + Layer Mapping)")
+st.title("🏗️ KMZ → DXF (Masuk ke Template)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
