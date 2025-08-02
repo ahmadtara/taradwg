@@ -72,24 +72,24 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
-def clone_block_definition(template_doc, target_doc, source_name, target_name):
-    if target_name in target_doc.blocks:
-        return
-    if source_name not in template_doc.blocks:
-        raise ValueError(f"Block '{source_name}' tidak ditemukan di template.")
-    source_block = template_doc.blocks.get(source_name)
-    new_block = target_doc.blocks.new(name=target_name, base_point=source_block.base_point)
-    for entity in source_block:
-        new_block.add_entity(entity.copy())
-
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
-    matchprop_hp = None
-    matchprop_pole = None
-    matchprop_sr = None
+    doc = ezdxf.new(dxfversion="R2010")
+    msp = doc.modelspace()
 
+    # Copy all block definitions from template to output
+    for block_name in template_doc.blocks.block_names():
+        if block_name in doc.blocks:
+            continue
+        block_def = template_doc.blocks[block_name]
+        new_block = doc.blocks.new(name=block_name)
+        for entity in block_def:
+            new_block.add_entity(entity.copy())
+
+    # Find matchprop examples
+    matchprop_hp = matchprop_pole = matchprop_sr = None
     for e in template_msp.query('TEXT'):
         txt = e.dxf.text.upper()
         if 'NN-' in txt:
@@ -99,26 +99,16 @@ def draw_to_dxf(classified, template_path):
         elif 'SRMRW16.067.B01' in txt:
             matchprop_sr = e.dxf
 
-    doc = ezdxf.new(dxfversion="R2010")
-    msp = doc.modelspace()
-
-    clone_block_definition(template_doc, doc, source_name="NW", target_name="New Pole")
-
-    all_points_xy = []
-    for category in classified.values():
-        for p in category:
-            all_points_xy.append(latlon_to_xy(p['latitude'], p['longitude']))
-
+    all_points_xy = [latlon_to_xy(p['latitude'], p['longitude']) for cat in classified.values() for p in cat]
     if not all_points_xy:
         st.error("❌ Tidak ada titik ditemukan di KMZ!")
         return None
 
     shifted_points, (cx, cy) = apply_offset(all_points_xy)
-
     idx = 0
-    for category_name, category in classified.items():
-        for i in range(len(category)):
-            category[i]['xy'] = shifted_points[idx]
+    for category in classified.values():
+        for p in category:
+            p['xy'] = shifted_points[idx]
             idx += 1
 
     for layer_name, data in classified.items():
@@ -126,70 +116,29 @@ def draw_to_dxf(classified, template_path):
             doc.layers.add(name=layer_name)
         for obj in data:
             x, y = obj['xy']
-
-            if layer_name == "NEW_POLE":
-                msp.add_blockref("New Pole", insert=(x, y), dxfattribs={"layer": layer_name})
-                msp.add_text(obj["name"], dxfattribs={
-                    "height": 1.5,
-                    "layer": layer_name,
-                    "insert": (x + 2, y)
-                })
-                continue
-
             if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            if layer_name == "HP_COVER":
-                matchprop = matchprop_hp
-            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
-                matchprop = matchprop_pole
-            elif layer_name in ["FAT", "FDT"]:
-                matchprop = matchprop_sr
-            else:
-                matchprop = None
+            matchprop = {
+                "HP_COVER": matchprop_hp,
+                "NEW_POLE": matchprop_pole,
+                "EXISTING_POLE": matchprop_pole,
+                "FAT": matchprop_sr,
+                "FDT": matchprop_sr
+            }.get(layer_name, None)
 
+            attribs = {
+                "height": matchprop.height if matchprop else 1.5,
+                "layer": layer_name,
+                "insert": (x + 2, y)
+            }
             if matchprop:
-                attribs = {
-                    "height": matchprop.height,
-                    "layer": layer_name,
-                    "color": matchprop.color,
-                    "insert": (x + 2, y)
-                }
-            else:
-                attribs = {"height": 1.5, "layer": layer_name, "insert": (x + 2, y)}
+                attribs["color"] = matchprop.color
 
             msp.add_text(obj["name"], dxfattribs=attribs)
 
+            # Optional: insert block if exists
+            if layer_name in ["NEW_POLE", "EXISTING_POLE"] and "NW" in doc.blocks:
+                msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+
     return doc
-
-st.title("🏗️ KMZ → DXF Converter with Matchprop")
-st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
-
-uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
-
-if uploaded_kmz and uploaded_template:
-    extract_dir = "temp_kmz"
-    os.makedirs(extract_dir, exist_ok=True)
-    output_dxf = "converted_output.dxf"
-
-    with open("template_ref.dxf", "wb") as f:
-        f.write(uploaded_template.read())
-
-    with st.spinner("🔍 Memproses data..."):
-        kml_path = extract_kmz(uploaded_kmz, extract_dir)
-        points = parse_kml(kml_path)
-        classified = classify_points(points)
-
-        updated_doc = draw_to_dxf(classified, "template_ref.dxf")
-        if updated_doc:
-            updated_doc.saveas(output_dxf)
-
-    if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF sudah dibuat.")
-        with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
-
-        st.markdown("### 📊 Ringkasan Objek")
-        for layer_name, objs in classified.items():
-            st.write(f"- **{layer_name}**: {len(objs)} titik")
