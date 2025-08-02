@@ -9,6 +9,7 @@ st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wi
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
+# Folder yang dicari
 target_folders = {
     'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3'
 }
@@ -72,6 +73,14 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
+def clone_block(template_doc, target_doc, block_name):
+    if block_name in template_doc.blocks:
+        if block_name not in target_doc.blocks:
+            source_block = template_doc.blocks[block_name]
+            target_block = target_doc.blocks.new(name=block_name)
+            for e in source_block:
+                target_block.add_entity(e.copy())
+
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
@@ -91,6 +100,9 @@ def draw_to_dxf(classified, template_path):
 
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
+
+    # Clone block NW
+    clone_block(template_doc, doc, "NW")
 
     all_points_xy = []
     for category in classified.values():
@@ -115,8 +127,9 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            if layer_name != "HP_COVER":
-                msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+            # Tambahkan blok NW untuk kategori tiang
+            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
 
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
@@ -145,7 +158,7 @@ st.title("🏗️ KMZ → DXF Converter with Matchprop")
 st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
+uploaded_template = st.file_uploader("🖐️ Upload Template DXF", type=["dxf"])
 
 if uploaded_kmz and uploaded_template:
     extract_dir = "temp_kmz"
