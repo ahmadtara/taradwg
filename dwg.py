@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wide")
+st.set_page_config(page_title="KMZ → DXF Converter with Matchprop + Path Support", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
@@ -39,7 +39,7 @@ def parse_kml(kml_path):
             name = pm.find('kml:name', ns)
             name_text = name.text.strip() if name is not None else ""
 
-            # --- Ambil koordinat Point ---
+            # Point
             point_coord = pm.find('.//kml:Point/kml:coordinates', ns)
             if point_coord is not None:
                 lon, lat, *_ = point_coord.text.strip().split(',')
@@ -52,7 +52,7 @@ def parse_kml(kml_path):
                 })
                 continue
 
-            # --- Ambil koordinat LineString ---
+            # LineString
             line_coord = pm.find('.//kml:LineString/kml:coordinates', ns)
             if line_coord is not None:
                 coords = []
@@ -67,7 +67,7 @@ def parse_kml(kml_path):
                 })
                 continue
 
-            # --- Ambil koordinat Polygon ---
+            # Polygon
             poly_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
             if poly_coord is not None:
                 coords = []
@@ -122,6 +122,20 @@ def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
+    # Copy semua layer dari template ke dokumen baru
+    doc = ezdxf.new(dxfversion="R2010")
+    for layer in template_doc.layers:
+        if layer.dxf.name not in doc.layers:
+            doc.layers.new(name=layer.dxf.name,
+                           dxfattribs={
+                               "color": layer.dxf.color,
+                               "linetype": layer.dxf.linetype,
+                               "lineweight": layer.dxf.lineweight
+                           })
+
+    msp = doc.modelspace()
+
+    # Cari sample entity untuk matchprop
     matchprop_hp = matchprop_pole = matchprop_sr = None
     matchprop_boundary = matchprop_dist_cable = matchprop_sling_wire = None
 
@@ -140,9 +154,6 @@ def draw_to_dxf(classified, template_path):
             matchprop_dist_cable = e.dxf
         elif e.dxf.layer.upper() == "FO STRAND AE":
             matchprop_sling_wire = e.dxf
-
-    doc = ezdxf.new(dxfversion="R2010")
-    msp = doc.modelspace()
 
     all_xy = []
     for cat_items in classified.values():
@@ -169,13 +180,9 @@ def draw_to_dxf(classified, template_path):
                 idx += len(obj['coords'])
 
     for layer_name, data in classified.items():
-        if layer_name not in doc.layers:
-            doc.layers.add(name=layer_name)
-
         for obj in data:
             if obj['type'] == 'point':
                 x, y = obj['xy']
-                # Tentukan matchprop
                 if layer_name == "HP_COVER":
                     matchprop = matchprop_hp
                 elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
@@ -208,7 +215,7 @@ def draw_to_dxf(classified, template_path):
 
     return doc
 
-st.title("🏗️ KMZ → DXF Converter with Matchprop + Path Support")
+st.title("🏗️ KMZ → DXF Converter with Matchprop + Path Support + Layer Copy")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
