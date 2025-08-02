@@ -119,14 +119,12 @@ def classify_items(items):
     return classified
 
 def draw_to_template(classified, template_path):
-    # Baca template asli
+    # Gunakan template asli
     doc = ezdxf.readfile(template_path)
     msp = doc.modelspace()
 
-    # Ambil referensi matchprop dari template
+    # Ambil referensi matchprop untuk teks
     matchprop_hp = matchprop_pole = matchprop_sr = None
-    matchprop_boundary = matchprop_dist_cable = matchprop_sling_wire = None
-
     for e in msp.query('*'):
         if e.dxftype() == 'TEXT':
             txt = e.dxf.text.upper()
@@ -136,12 +134,6 @@ def draw_to_template(classified, template_path):
                 matchprop_pole = e.dxf
             elif 'SRMRW16.067.B01' in txt:
                 matchprop_sr = e.dxf
-        if e.dxf.layer.upper() == "FAT AREA":
-            matchprop_boundary = e.dxf
-        elif e.dxf.layer.upper() == "FO 36 CORE":
-            matchprop_dist_cable = e.dxf
-        elif e.dxf.layer.upper() == "FO STRAND AE":
-            matchprop_sling_wire = e.dxf
 
     # Hitung offset semua koordinat
     all_xy = []
@@ -159,7 +151,7 @@ def draw_to_template(classified, template_path):
     shifted_all, (cx, cy) = apply_offset(all_xy)
 
     idx = 0
-    for cat_items in classified.values():
+    for cat_items in classified.items():
         for obj in cat_items:
             if obj['type'] == 'point':
                 obj['xy'] = shifted_all[idx]
@@ -168,7 +160,7 @@ def draw_to_template(classified, template_path):
                 obj['xy_path'] = shifted_all[idx: idx + len(obj['coords'])]
                 idx += len(obj['coords'])
 
-    # Gambar ke template
+    # Tambahkan ke template
     for layer_name, data in classified.items():
         for obj in data:
             if obj['type'] == 'point':
@@ -184,24 +176,13 @@ def draw_to_template(classified, template_path):
                 attribs = {
                     "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                     "layer": layer_name,
-                    "color": getattr(matchprop, "color", 256) if matchprop else 256,
                     "insert": (x + 2, y)
                 }
                 msp.add_text(obj["name"], dxfattribs=attribs)
 
             elif obj['type'] == 'path':
-                if layer_name == "BOUNDARY":
-                    matchprop = matchprop_boundary
-                elif layer_name == "DISTRIBUTION_CABLE":
-                    matchprop = matchprop_dist_cable
-                elif layer_name == "SLING_WIRE":
-                    matchprop = matchprop_sling_wire
-                else:
-                    matchprop = None
-                attribs = {"layer": layer_name}
-                if matchprop:
-                    attribs["color"] = getattr(matchprop, "color", 256)
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs=attribs)
+                # Path langsung ikut properti layer dari template (BYLAYER)
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
 
     return doc
 
