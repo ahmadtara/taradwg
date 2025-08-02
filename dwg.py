@@ -15,6 +15,13 @@ target_folders = {
     'BOUNDARY', 'DISTRIBUTION CABLE', 'SLING WIRE'
 }
 
+# Mapping folder KMZ -> Layer template
+folder_to_layer = {
+    "BOUNDARY": "FAT AREA",
+    "DISTRIBUTION_CABLE": "FO 36 CORE",
+    "SLING_WIRE": "FO STRAND AE"
+}
+
 def extract_kmz(kmz_path, extract_dir):
     with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
         kmz_file.extractall(extract_dir)
@@ -137,7 +144,7 @@ def draw_to_template(classified, template_path):
 
     # Hitung offset semua koordinat
     all_xy = []
-    for cat_items in classified.values():
+    for layer_name, cat_items in classified.items():
         for obj in cat_items:
             if obj['type'] == 'point':
                 all_xy.append(latlon_to_xy(obj['latitude'], obj['longitude']))
@@ -151,7 +158,7 @@ def draw_to_template(classified, template_path):
     shifted_all, (cx, cy) = apply_offset(all_xy)
 
     idx = 0
-    for cat_items in classified.items():
+    for layer_name, cat_items in classified.items():
         for obj in cat_items:
             if obj['type'] == 'point':
                 obj['xy'] = shifted_all[idx]
@@ -161,8 +168,8 @@ def draw_to_template(classified, template_path):
                 idx += len(obj['coords'])
 
     # Tambahkan ke template
-    for layer_name, data in classified.items():
-        for obj in data:
+    for layer_name, cat_items in classified.items():
+        for obj in cat_items:
             if obj['type'] == 'point':
                 x, y = obj['xy']
                 if layer_name == "HP_COVER":
@@ -175,18 +182,19 @@ def draw_to_template(classified, template_path):
                     matchprop = None
                 attribs = {
                     "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
-                    "layer": layer_name,
+                    "layer": folder_to_layer.get(layer_name, layer_name),  # mapping untuk point
                     "insert": (x + 2, y)
                 }
                 msp.add_text(obj["name"], dxfattribs=attribs)
 
             elif obj['type'] == 'path':
-                # Path langsung ikut properti layer dari template (BYLAYER)
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
+                # Gunakan mapping layer untuk path
+                layer_target = folder_to_layer.get(layer_name, layer_name)
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_target})
 
     return doc
 
-st.title("🏗️ KMZ → DXF (Masuk ke Template)")
+st.title("🏗️ KMZ → DXF (Masuk ke Template + Layer Mapping)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
