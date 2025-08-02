@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import zipfile
 import os
 import math
@@ -6,11 +6,10 @@ from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DWG Converter", layout="wide")
+st.set_page_config(page_title="KMZ → DXF Converter", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-# Folder target yang akan diklasifikasikan
 target_folders = {
     'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4'
 }
@@ -41,7 +40,12 @@ def parse_kml(kml_path):
             if name is not None and coord is not None:
                 name_text = name.text.strip()
                 lon, lat, *_ = coord.text.strip().split(',')
-                points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon), 'folder': folder_name})
+                points.append({
+                    'name': name_text,
+                    'latitude': float(lat),
+                    'longitude': float(lon),
+                    'folder': folder_name
+                })
     return points
 
 def parse_boundaries(kml_path):
@@ -76,10 +80,10 @@ def apply_offset(points_xy):
 
 def classify_points(points):
     classified = {
-        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
+        "FDT": [], "FAT": [], "HP_COVER": [],
+        "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
     }
     for p in points:
-        name = p['name'].upper()
         folder = p['folder']
         if "FDT" in folder:
             classified["FDT"].append(p)
@@ -125,41 +129,46 @@ def draw_to_dxf(classified, boundaries):
             msp.add_text(obj["name"], dxfattribs={
                 "height": 1.5,
                 "layer": layer_name,
-                "insert": (x + 2, y)  # ← posisi teks langsung di sini
+                "insert": (x + 2, y)
             })
 
     for polygon in boundaries:
         shifted_polygon, _ = apply_offset(polygon)
         msp.add_lwpolyline(shifted_polygon, close=True, dxfattribs={"layer": "BOUNDARY"})
 
+    # Hapus semua selain circle, text, dan lwpolyline
+    valid_types = {"CIRCLE", "TEXT", "LWPOLYLINE"}
+    to_delete = [e for e in msp if e.dxftype() not in valid_types]
+    for e in to_delete:
+        msp.delete_entity(e)
+
     return doc
 
-# Streamlit UI
-st.title("🏗️ KMZ → DXF Converter (No Template)")
-st.write("Konversi file KMZ menjadi file DXF langsung tanpa upload template.")
+# STREAMLIT APP
+st.title("📍 Konversi KMZ → DXF (UTM Zone 60, Clean Output)")
+st.write("Upload file .KMZ lalu hasilnya akan digambar ke UTM Zone 60 tanpa bentuk kotak/rectangle tambahan.")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 
 if uploaded_kmz:
     extract_dir = "temp_kmz"
     os.makedirs(extract_dir, exist_ok=True)
-    output_dxf = "converted_output.dxf"
+    output_dxf = "output_kmz_clean.dxf"
 
-    with st.spinner("🔍 Memproses data..."):
+    with st.spinner("🚀 Memproses file..."):
         kml_path = extract_kmz(uploaded_kmz, extract_dir)
         points = parse_kml(kml_path)
         classified = classify_points(points)
         boundaries = parse_boundaries(kml_path)
-
-        updated_doc = draw_to_dxf(classified, boundaries)
-        if updated_doc:
-            updated_doc.saveas(output_dxf)
+        doc = draw_to_dxf(classified, boundaries)
+        if doc:
+            doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF sudah dibuat.")
+        st.success("✅ DXF berhasil dibuat tanpa objek kotak tambahan.")
         with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
+            st.download_button("⬇️ Download DXF", f, file_name="clean_output.dxf")
 
-        st.markdown("### 📊 Ringkasan Objek")
+        st.markdown("### 🔎 Ringkasan Titik:")
         for layer_name, objs in classified.items():
             st.write(f"- **{layer_name}**: {len(objs)} titik")
