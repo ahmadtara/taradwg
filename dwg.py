@@ -73,7 +73,12 @@ def classify_points(points):
     return classified
 
 def draw_to_dxf(classified, template_path):
-    template_doc = ezdxf.readfile(template_path)
+    try:
+        template_doc = ezdxf.readfile(template_path)
+    except Exception as e:
+        st.error(f"❌ Template DXF gagal dibuka: {e}")
+        return None
+
     template_msp = template_doc.modelspace()
 
     matchprop_hp = None
@@ -94,10 +99,17 @@ def draw_to_dxf(classified, template_path):
 
     # Salin block NW dari template
     if "NW" in template_doc.blocks:
-        block_nw = template_doc.blocks.get("NW")
-        doc.blocks.new(name="NW", base_point=block_nw.block.dxf.base_point)
-        for entity in block_nw:
-            doc.blocks.get("NW").add_entity(entity.copy())
+        if "NW" not in doc.blocks:
+            source_block = template_doc.blocks.get("NW")
+            try:
+                target_block = doc.blocks.new(name="NW", base_point=source_block.block.dxf.base_point)
+                for entity in source_block:
+                    try:
+                        target_block.add_entity(entity.copy())
+                    except Exception as e:
+                        st.warning(f"⚠️ Gagal menyalin entitas dalam block NW: {e}")
+            except Exception as e:
+                st.warning(f"⚠️ Gagal membuat block NW: {e}")
     else:
         st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
 
@@ -127,16 +139,13 @@ def draw_to_dxf(classified, template_path):
             if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
+            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 matchprop = matchprop_pole
-                # Tambahkan block NW
-                try:
-                    if "NW" in doc.blocks:
-                        msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
-                except Exception as e:
-                    st.error(f"❌ Gagal insert block NW: {e}")
             elif layer_name in ["FAT", "FDT"]:
                 matchprop = matchprop_sr
             else:
@@ -156,7 +165,7 @@ def draw_to_dxf(classified, template_path):
 
     return doc
 
-st.title("🏗️ KMZ → DXF Converter with Matchprop")
+st.title("🏧 KMZ → DXF Converter with Matchprop")
 st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
@@ -177,7 +186,10 @@ if uploaded_kmz and uploaded_template:
 
         updated_doc = draw_to_dxf(classified, "template_ref.dxf")
         if updated_doc:
-            updated_doc.saveas(output_dxf)
+            try:
+                updated_doc.saveas(output_dxf)
+            except Exception as e:
+                st.error(f"❌ Gagal menyimpan DXF: {e}")
 
     if os.path.exists(output_dxf):
         st.success("✅ Konversi berhasil! DXF sudah dibuat.")
