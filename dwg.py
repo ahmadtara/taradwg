@@ -72,16 +72,15 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
-def clone_block(source_doc, target_doc, block_name, insert_point):
-    if block_name not in source_doc.blocks:
-        st.warning(f"⚠️ Block '{block_name}' tidak ditemukan di template!")
+def clone_block_definition(template_doc, target_doc, source_name, target_name):
+    if target_name in target_doc.blocks:
         return
-    if block_name not in target_doc.blocks:
-        source_block = source_doc.blocks[block_name]
-        target_doc.blocks.new(name=block_name)
-        for e in source_block:
-            target_doc.blocks[block_name].add_entity(e.copy())
-    target_doc.modelspace().add_blockref(block_name, insert_point)
+    if source_name not in template_doc.blocks:
+        raise ValueError(f"Block '{source_name}' tidak ditemukan di template.")
+    source_block = template_doc.blocks.get(source_name)
+    new_block = target_doc.blocks.new(name=target_name, base_point=source_block.base_point)
+    for entity in source_block:
+        new_block.add_entity(entity.copy())
 
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
@@ -102,6 +101,8 @@ def draw_to_dxf(classified, template_path):
 
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
+
+    clone_block_definition(template_doc, doc, source_name="NW", target_name="New Pole")
 
     all_points_xy = []
     for category in classified.values():
@@ -126,9 +127,16 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            if layer_name == "NEW_POLE" or layer_name == "EXISTING_POLE":
-                clone_block(template_doc, doc, "New Pole", (x, y))
-            else:
+            if layer_name == "NEW_POLE":
+                msp.add_blockref("New Pole", insert=(x, y), dxfattribs={"layer": layer_name})
+                msp.add_text(obj["name"], dxfattribs={
+                    "height": 1.5,
+                    "layer": layer_name,
+                    "insert": (x + 2, y)
+                })
+                continue
+
+            if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
             if layer_name == "HP_COVER":
