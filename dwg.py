@@ -92,6 +92,13 @@ def draw_to_dxf(classified, template_path):
             matchprop_sr = e.dxf
 
     doc = ezdxf.new(dxfversion="R2010")
+
+    # Salin definisi block NW dari template ke dokumen baru
+    if "NW" in template_doc.blocks:
+        new_block = doc.blocks.new(name="NW")
+        for entity in template_doc.blocks["NW"]:
+            new_block.add_entity(entity.copy())
+
     msp = doc.modelspace()
 
     all_points_xy = []
