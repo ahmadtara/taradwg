@@ -1,186 +1,128 @@
-import streamlit as st
-import zipfile
 import os
-from xml.etree import ElementTree as ET
+import zipfile
 import ezdxf
+from fastkml import kml
+from shapely.geometry import Point, LineString, Polygon
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wide")
-
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
-
-# Folder yang didukung
-target_folders = {
-    'FDT', 'FAT', 'HP COVER',
-    'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3',
-    'BOUNDARY', 'DISTRIBUTION CABLE', 'SLING WIRE'
+# Folder ke Layer mapping
+LAYER_MAPPING = {
+    "BOUNDARY": "FAT AREA",
+    "DISTRIBUTION CABLE": "FO 36 CORE",
+    "SLING WIRE": "FO STRAND AE"
 }
 
-def extract_kmz(kmz_path, extract_dir):
-    with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
-        kmz_file.extractall(extract_dir)
-    return os.path.join(extract_dir, "doc.kml")
+# Folder ke block NW
+BLOCK_FOLDERS = [
+    "NEW POLE 7-3", "NEW POLE 7-4",
+    "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 7-4"
+]
 
-def parse_kml(kml_path):
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    with open(kml_path, 'rb') as f:
-        tree = ET.parse(f)
-    root = tree.getroot()
-    folders = root.findall('.//kml:Folder', ns)
-    
-    points = []
-    paths = []
+# Folder ke kategori text matchprop
+TEXT_FOLDER_MAP = {
+    "FDT": "NN-",
+    "FAT": "SRMRW16.067.B01",
+    "HP COVER": "MR.SRMRW16",
+    "NEW POLE 7-3": "MR.SRMRW16",
+    "NEW POLE 7-4": "MR.SRMRW16",
+    "EXISTING POLE EMR 7-3": "MR.SRMRW16",
+    "EXISTING POLE EMR 7-4": "MR.SRMRW16"
+}
 
-    for folder in folders:
-        folder_name_tag = folder.find('kml:name', ns)
-        if folder_name_tag is None:
-            continue
-        folder_name = folder_name_tag.text.strip().upper()
-        if folder_name not in target_folders:
-            continue
+TARGET_EPSG = "EPSG:32760"  # UTM Zone 60S
+transformer = Transformer.from_crs("EPSG:4326", TARGET_EPSG, always_xy=True)
 
-        placemarks = folder.findall('.//kml:Placemark', ns)
-        for pm in placemarks:
-            name_tag = pm.find('kml:name', ns)
-            name = name_tag.text.strip() if name_tag is not None else ''
 
-            # Cek koordinat untuk <Point>
-            coord_tag = pm.find('.//kml:Point/kml:coordinates', ns)
-            if coord_tag is not None:
-                lon, lat, *_ = coord_tag.text.strip().split(',')
-                points.append({
-                    'name': name,
-                    'latitude': float(lat),
-                    'longitude': float(lon),
-                    'folder': folder_name
-                })
+def extract_kml_from_kmz(kmz_path):
+    with zipfile.ZipFile(kmz_path, 'r') as zf:
+        for name in zf.namelist():
+            if name.endswith('.kml'):
+                return zf.read(name).decode('utf-8')
+    return None
 
-            # Cek koordinat untuk <LineString> dan <Polygon>
-            for path_tag in pm.findall('.//kml:LineString/kml:coordinates', ns) + \
-                            pm.findall('.//kml:Polygon/kml:outerBoundaryIs/kml:LinearRing/kml:coordinates', ns):
-                raw_coords = path_tag.text.strip().split()
-                coord_list = []
-                for c in raw_coords:
-                    lon, lat, *_ = c.split(',')
-                    coord_list.append((float(lat), float(lon)))
-                paths.append({
-                    'name': name,
-                    'folder': folder_name,
-                    'path': coord_list
-                })
 
-    return points, paths
+def parse_kml_geometries(kml_string):
+    k = kml.KML()
+    k.from_string(kml_string)
+    result = []
 
-def latlon_to_xy(lat, lon):
-    x, y = transformer.transform(lon, lat)
-    return x, y
+    def _parse_features(features, folder_name=""):
+        for f in features:
+            if isinstance(f, kml.Placemark):
+                geom = f.geometry
+                if isinstance(geom, Point):
+                    coords = transformer.transform(geom.x, geom.y)
+                    result.append((folder_name, 'POINT', coords))
+                elif isinstance(geom, LineString):
+                    coords = [transformer.transform(x, y) for x, y in geom.coords]
+                    result.append((folder_name, 'LINE', coords))
+                elif isinstance(geom, Polygon):
+                    coords = [transformer.transform(x, y) for x, y in geom.exterior.coords]
+                    result.append((folder_name, 'POLYGON', coords))
+            elif hasattr(f, 'features'):
+                new_folder_name = f.name or folder_name
+                _parse_features(f.features(), new_folder_name)
 
-def apply_offset(points_xy):
-    xs = [x for x, y in points_xy]
-    ys = [y for x, y in points_xy]
-    cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
-    return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
+    _parse_features(k.features())
+    return result
 
-def classify_points(points):
-    classified = {
-        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
-    }
-    for p in points:
-        folder = p['folder']
-        if "FDT" in folder:
-            classified["FDT"].append(p)
-        elif "FAT" in folder:
-            classified["FAT"].append(p)
-        elif "HP COVER" in folder:
-            classified["HP_COVER"].append(p)
-        elif "NEW POLE" in folder:
-            classified["NEW_POLE"].append(p)
-        elif "EXISTING" in folder or "EMR" in folder:
-            classified["EXISTING_POLE"].append(p)
-        else:
-            classified["POLE"].append(p)
-    return classified
 
-def classify_paths(paths):
-    classified_paths = {
-        "BOUNDARY": [], "DISTRIBUTION_CABLE": [], "SLING_WIRE": []
-    }
-    for p in paths:
-        folder = p['folder']
-        if "BOUNDARY" in folder:
-            classified_paths["BOUNDARY"].append(p)
-        elif "DISTRIBUTION" in folder:
-            classified_paths["DISTRIBUTION_CABLE"].append(p)
-        elif "SLING" in folder:
-            classified_paths["SLING_WIRE"].append(p)
-    return classified_paths
+def draw_to_dxf(template_dxf, output_dxf, parsed):
+    doc = ezdxf.readfile(template_dxf)
+    msp = doc.modelspace()
 
-def draw_to_dxf(classified_points, classified_paths, template_path):
-    template_doc = ezdxf.readfile(template_path)
-    msp = template_doc.modelspace()
+    matchprop_hp = None
+    matchprop_pole = None
+    matchprop_sr = None
 
-    all_points_xy = [latlon_to_xy(p['latitude'], p['longitude']) for c in classified_points.values() for p in c]
-    if not all_points_xy:
-        st.error("❌ Tidak ada titik ditemukan di KMZ!")
-        return None
+    for e in msp.query('TEXT'):
+        txt = e.dxf.text.upper()
+        if 'NN-' in txt:
+            matchprop_hp = e.dxf
+        elif 'MR.SRMRW16' in txt:
+            matchprop_pole = e.dxf
+        elif 'SRMRW16.067.B01' in txt:
+            matchprop_sr = e.dxf
 
-    shifted_points, (cx, cy) = apply_offset(all_points_xy)
+    # Hitung offset tengah untuk geser semua objek
+    all_coords = [pt for _, _, pts in parsed for pt in (pts if isinstance(pts, list) else [pts])]
+    if all_coords:
+        avg_x = sum(x for x, _ in all_coords) / len(all_coords)
+        avg_y = sum(y for _, y in all_coords) / len(all_coords)
+    else:
+        avg_x = avg_y = 0
 
-    idx = 0
-    for category in classified_points.values():
-        for i in range(len(category)):
-            category[i]['xy'] = shifted_points[idx]
-            idx += 1
+    for folder, gtype, coords in parsed:
+        layer_name = LAYER_MAPPING.get(folder.upper(), folder.upper())
 
-    for layer_name, data in classified_points.items():
-        for obj in data:
-            x, y = obj['xy']
-            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+        if gtype == 'POINT':
+            x, y = coords[0] - avg_x, coords[1] - avg_y
+            if folder.upper() in [f.upper() for f in BLOCK_FOLDERS]:
                 msp.add_blockref('NW', insert=(x, y), dxfattribs={"layer": layer_name})
+            elif folder.upper() in TEXT_FOLDER_MAP:
+                if 'FDT' in folder.upper() and matchprop_hp:
+                    msp.add_text("FDT", dxfattribs=matchprop_hp).set_pos((x, y))
+                elif 'FAT' in folder.upper() and matchprop_sr:
+                    msp.add_text("FAT", dxfattribs=matchprop_sr).set_pos((x, y))
+                elif 'HP COVER' in folder.upper() and matchprop_pole:
+                    msp.add_text("HP", dxfattribs=matchprop_pole).set_pos((x, y))
+                else:
+                    msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
             else:
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
-            msp.add_text(obj["name"], dxfattribs={"layer": layer_name, "insert": (x + 2, y)})
 
-    for layer, items in classified_paths.items():
-        for p in items:
-            points_xy = [latlon_to_xy(lat, lon) for lat, lon in p['path']]
-            shifted = [(x - cx, y - cy) for x, y in points_xy]
-            msp.add_lwpolyline(shifted, close=False, dxfattribs={"layer": layer})
+        elif gtype in ['LINE', 'POLYGON']:
+            offset_coords = [(x - avg_x, y - avg_y) for x, y in coords]
+            msp.add_lwpolyline(offset_coords, dxfattribs={"layer": layer_name})
 
-    return template_doc
+    doc.saveas(output_dxf)
 
-# UI
-st.title("🏗️ KMZ → DXF Converter with Matchprop")
-st.write("Konversi file KMZ menjadi DXF dengan properti teks dan garis dari template DXF.")
 
-uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📀 Upload Template DXF", type=["dxf"])
+if __name__ == '__main__':
+    kmz_path = 'input.kmz'
+    template_dxf = 'template_ref.dxf'
+    output_dxf = 'template_ref.dxf'  # Overwrite template directly
 
-if uploaded_kmz and uploaded_template:
-    extract_dir = "temp_kmz"
-    os.makedirs(extract_dir, exist_ok=True)
-    output_dxf = "converted_output.dxf"
-
-    with open("template_ref.dxf", "wb") as f:
-        f.write(uploaded_template.read())
-
-    with st.spinner("🔍 Memproses data..."):
-        kml_path = extract_kmz(uploaded_kmz, extract_dir)
-        points, paths = parse_kml(kml_path)
-        classified_points = classify_points(points)
-        classified_paths = classify_paths(paths)
-
-        updated_doc = draw_to_dxf(classified_points, classified_paths, "template_ref.dxf")
-        if updated_doc:
-            updated_doc.saveas(output_dxf)
-
-    if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF sudah dibuat.")
-        with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
-
-        st.markdown("### 📊 Ringkasan Objek")
-        for layer_name, objs in classified_points.items():
-            st.write(f"- **{layer_name}**: {len(objs)} titik")
-        for layer_name, objs in classified_paths.items():
-            st.write(f"- **{layer_name}**: {len(objs)} path")
+    kml_data = extract_kml_from_kmz(kmz_path)
+    parsed = parse_kml_geometries(kml_data)
+    draw_to_dxf(template_dxf, output_dxf, parsed)
