@@ -73,15 +73,15 @@ def classify_points(points):
     return classified
 
 def clone_block(source_doc, target_doc, block_name, insert_point):
-    # Ensure block is copied
+    if block_name not in source_doc.blocks:
+        st.warning(f"⚠️ Block '{block_name}' tidak ditemukan di template!")
+        return
     if block_name not in target_doc.blocks:
-        source_block = source_doc.blocks.get(block_name)
-        if source_block:
-            target_doc.blocks.add_block(source_block)
-
-    # Insert block reference
-    msp = target_doc.modelspace()
-    msp.add_blockref(block_name, insert_point)
+        source_block = source_doc.blocks[block_name]
+        target_doc.blocks.new(name=block_name)
+        for e in source_block:
+            target_doc.blocks[block_name].add_entity(e.copy())
+    target_doc.modelspace().add_blockref(block_name, insert_point)
 
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
@@ -126,13 +126,11 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            # Gunakan insert block "New Pole" jika termasuk NEW_POLE atau EXISTING_POLE
-            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+            if layer_name == "NEW_POLE" or layer_name == "EXISTING_POLE":
                 clone_block(template_doc, doc, "New Pole", (x, y))
             else:
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tambahkan teks nama titik
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
