@@ -92,6 +92,15 @@ def draw_to_dxf(classified, template_path):
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
+    # ✅ Salin block NW dari template ke dokumen output
+    if "NW" in template_doc.blocks:
+        source_block = template_doc.blocks.get("NW")
+        dest_block = doc.blocks.new(name="NW", base_point=source_block.block.dxf.base_point)
+        for entity in source_block:
+            dest_block.add_entity(entity.copy())
+    else:
+        st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
+
     all_points_xy = []
     for category in classified.values():
         for p in category:
@@ -115,20 +124,16 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            # Tambahkan block NW untuk NEW/EXISTING POLE
+            # Tambahkan block NW jika POLE
             if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 try:
-                    if "NW" in template_doc.blocks:
-                        msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
-                    else:
-                        st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
+                    msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
                 except Exception as e:
                     st.error(f"❌ Gagal insert block NW: {e}")
-            # Tambahkan lingkaran untuk selain HP_COVER, NEW_POLE, EXISTING_POLE
             elif layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tentukan matchprop teks
+            # Tambahkan teks semua titik
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
@@ -138,7 +143,6 @@ def draw_to_dxf(classified, template_path):
             else:
                 matchprop = None
 
-            # Tambahkan teks semua titik
             if matchprop:
                 attribs = {
                     "height": matchprop.height,
