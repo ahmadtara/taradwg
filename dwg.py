@@ -9,8 +9,11 @@ st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wi
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
+# Tambah folder baru ke target_folders
 target_folders = {
-    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3'
+    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4',
+    'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3',
+    'BOUNDARY', 'DISTRIBUTION CABLE', 'SLING WIRE'
 }
 
 def extract_kmz(kmz_path, extract_dir):
@@ -39,7 +42,12 @@ def parse_kml(kml_path):
             if name is not None and coord is not None:
                 name_text = name.text.strip()
                 lon, lat, *_ = coord.text.strip().split(',')
-                points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon), 'folder': folder_name})
+                points.append({
+                    'name': name_text,
+                    'latitude': float(lat),
+                    'longitude': float(lon),
+                    'folder': folder_name
+                })
     return points
 
 def latlon_to_xy(lat, lon):
@@ -54,13 +62,15 @@ def apply_offset(points_xy):
 
 def classify_points(points):
     classified = {
-        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
+        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [],
+        "EXISTING_POLE": [], "POLE": [],
+        "BOUNDARY": [], "DISTRIBUTION_CABLE": [], "SLING_WIRE": []
     }
     for p in points:
         folder = p['folder']
         if "FDT" in folder:
             classified["FDT"].append(p)
-        elif "FAT" in folder:
+        elif "FAT" in folder and "AREA" not in folder:
             classified["FAT"].append(p)
         elif "HP COVER" in folder:
             classified["HP_COVER"].append(p)
@@ -68,6 +78,12 @@ def classify_points(points):
             classified["NEW_POLE"].append(p)
         elif "EXISTING" in folder or "EMR" in folder:
             classified["EXISTING_POLE"].append(p)
+        elif "BOUNDARY" in folder:
+            classified["BOUNDARY"].append(p)
+        elif "DISTRIBUTION CABLE" in folder:
+            classified["DISTRIBUTION_CABLE"].append(p)
+        elif "SLING WIRE" in folder:
+            classified["SLING_WIRE"].append(p)
         else:
             classified["POLE"].append(p)
     return classified
@@ -76,9 +92,13 @@ def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
+    # Cari referensi matchprop dari template
     matchprop_hp = None
     matchprop_pole = None
     matchprop_sr = None
+    matchprop_boundary = None
+    matchprop_dist_cable = None
+    matchprop_sling_wire = None
 
     for e in template_msp.query('TEXT'):
         txt = e.dxf.text.upper()
@@ -88,6 +108,15 @@ def draw_to_dxf(classified, template_path):
             matchprop_pole = e.dxf
         elif 'SRMRW16.067.B01' in txt:
             matchprop_sr = e.dxf
+
+    # Cari sample entity berdasarkan layer untuk BOUNDARY, DISTRIBUTION CABLE, SLING WIRE
+    for e in template_msp:
+        if e.dxf.layer.upper() == "FAT AREA":
+            matchprop_boundary = e.dxf
+        elif e.dxf.layer.upper() == "FO 36 CORE":
+            matchprop_dist_cable = e.dxf
+        elif e.dxf.layer.upper() == "FO STRAND AE":
+            matchprop_sling_wire = e.dxf
 
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
@@ -115,24 +144,30 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            # ❌ Jangan gambar circle jika dari folder target_folders
             if obj['folder'] not in target_folders:
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
+            # Tentukan matchprop berdasarkan kategori
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 matchprop = matchprop_pole
             elif layer_name in ["FAT", "FDT"]:
                 matchprop = matchprop_sr
+            elif layer_name == "BOUNDARY":
+                matchprop = matchprop_boundary
+            elif layer_name == "DISTRIBUTION_CABLE":
+                matchprop = matchprop_dist_cable
+            elif layer_name == "SLING_WIRE":
+                matchprop = matchprop_sling_wire
             else:
                 matchprop = None
 
             if matchprop:
                 attribs = {
-                    "height": matchprop.height,
+                    "height": getattr(matchprop, "height", 1.5),
                     "layer": layer_name,
-                    "color": matchprop.color,
+                    "color": getattr(matchprop, "color", 256),
                     "insert": (x + 2, y)
                 }
             else:
