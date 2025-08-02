@@ -9,6 +9,7 @@ st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wi
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
+# Tambahkan FOLDER YANG DIPAKAI
 target_folders = {
     'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3', 'FAT', 'FDT'
 }
@@ -54,14 +55,20 @@ def apply_offset(points_xy):
 
 def classify_points(points):
     classified = {
-        "HP_COVER": [], "POLE": []
+        "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "FAT": [], "FDT": []
     }
     for p in points:
         folder = p['folder']
         if "HP COVER" in folder:
             classified["HP_COVER"].append(p)
-        else:
-            classified["POLE"].append(p)
+        elif "NEW POLE" in folder:
+            classified["NEW_POLE"].append(p)
+        elif "EXISTING POLE" in folder:
+            classified["EXISTING_POLE"].append(p)
+        elif "FAT" in folder:
+            classified["FAT"].append(p)
+        elif "FDT" in folder:
+            classified["FDT"].append(p)
     return classified
 
 def draw_to_dxf(classified, template_path):
@@ -73,11 +80,16 @@ def draw_to_dxf(classified, template_path):
         return None
 
     matchprop_hp = None
+    matchprop_pole = None
+    matchprop_sr = None
     for e in template_msp.query('TEXT'):
         txt = e.dxf.text.upper()
-        if 'NN-' in txt:
+        if 'NN-' in txt and not matchprop_hp:
             matchprop_hp = e.dxf
-            break
+        if 'MR.SRMRW16' in txt and not matchprop_pole:
+            matchprop_pole = e.dxf
+        if 'SRMRW16.067.B01' in txt and not matchprop_sr:
+            matchprop_sr = e.dxf
 
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
@@ -106,18 +118,28 @@ def draw_to_dxf(classified, template_path):
             x, y = obj['xy']
 
             if layer_name == "HP_COVER":
-                if matchprop_hp:
-                    attribs = {
-                        "height": matchprop_hp.height,
-                        "layer": layer_name,
-                        "color": matchprop_hp.color,
-                        "insert": (x + 2, y)
-                    }
-                else:
-                    attribs = {"height": 1.5, "layer": layer_name, "insert": (x + 2, y)}
-                msp.add_text(obj["name"], dxfattribs=attribs)
+                matchprop = matchprop_hp
+            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                matchprop = matchprop_pole
+            elif layer_name in ["FAT", "FDT"]:
+                matchprop = matchprop_sr
             else:
+                matchprop = None
+
+            if layer_name != "HP_COVER":
                 msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+
+            if matchprop:
+                attribs = {
+                    "height": matchprop.height,
+                    "layer": layer_name,
+                    "color": matchprop.color,
+                    "insert": (x + 2, y)
+                }
+            else:
+                attribs = {"height": 1.5, "layer": layer_name, "insert": (x + 2, y)}
+
+            msp.add_text(obj["name"], dxfattribs=attribs)
 
     return doc
 
