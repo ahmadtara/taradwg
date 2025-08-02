@@ -9,7 +9,6 @@ st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wi
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-# Tambah folder baru ke target_folders
 target_folders = {
     'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4',
     'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3',
@@ -27,7 +26,7 @@ def parse_kml(kml_path):
         tree = ET.parse(f)
     root = tree.getroot()
     folders = root.findall('.//kml:Folder', ns)
-    points = []
+    items = []
     for folder in folders:
         folder_name_tag = folder.find('kml:name', ns)
         if folder_name_tag is None:
@@ -38,79 +37,103 @@ def parse_kml(kml_path):
         placemarks = folder.findall('.//kml:Placemark', ns)
         for pm in placemarks:
             name = pm.find('kml:name', ns)
-            coord = pm.find('.//kml:coordinates', ns)
-            if name is not None and coord is not None:
-                name_text = name.text.strip()
-                lon, lat, *_ = coord.text.strip().split(',')
-                points.append({
+            name_text = name.text.strip() if name is not None else ""
+
+            # --- Ambil koordinat Point ---
+            point_coord = pm.find('.//kml:Point/kml:coordinates', ns)
+            if point_coord is not None:
+                lon, lat, *_ = point_coord.text.strip().split(',')
+                items.append({
+                    'type': 'point',
                     'name': name_text,
                     'latitude': float(lat),
                     'longitude': float(lon),
                     'folder': folder_name
                 })
-    return points
+                continue
+
+            # --- Ambil koordinat LineString ---
+            line_coord = pm.find('.//kml:LineString/kml:coordinates', ns)
+            if line_coord is not None:
+                coords = []
+                for c in line_coord.text.strip().split():
+                    lon, lat, *_ = c.split(',')
+                    coords.append((float(lat), float(lon)))
+                items.append({
+                    'type': 'path',
+                    'name': name_text,
+                    'coords': coords,
+                    'folder': folder_name
+                })
+                continue
+
+            # --- Ambil koordinat Polygon ---
+            poly_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
+            if poly_coord is not None:
+                coords = []
+                for c in poly_coord.text.strip().split():
+                    lon, lat, *_ = c.split(',')
+                    coords.append((float(lat), float(lon)))
+                items.append({
+                    'type': 'path',
+                    'name': name_text,
+                    'coords': coords,
+                    'folder': folder_name
+                })
+    return items
 
 def latlon_to_xy(lat, lon):
-    x, y = transformer.transform(lon, lat)
-    return x, y
+    return transformer.transform(lon, lat)
 
 def apply_offset(points_xy):
     xs = [x for x, y in points_xy]
     ys = [y for x, y in points_xy]
-    cx, cy = sum(xs)/len(xs), sum(ys)/len(ys)
+    cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
     return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
 
-def classify_points(points):
-    classified = {
-        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [],
-        "EXISTING_POLE": [], "POLE": [],
-        "BOUNDARY": [], "DISTRIBUTION_CABLE": [], "SLING_WIRE": []
-    }
-    for p in points:
-        folder = p['folder']
+def classify_items(items):
+    classified = {name: [] for name in [
+        "FDT", "FAT", "HP_COVER", "NEW_POLE", "EXISTING_POLE", "POLE",
+        "BOUNDARY", "DISTRIBUTION_CABLE", "SLING_WIRE"
+    ]}
+    for it in items:
+        folder = it['folder']
         if "FDT" in folder:
-            classified["FDT"].append(p)
-        elif "FAT" in folder and "AREA" not in folder:
-            classified["FAT"].append(p)
+            classified["FDT"].append(it)
+        elif "FAT" in folder and folder != "FAT AREA":
+            classified["FAT"].append(it)
         elif "HP COVER" in folder:
-            classified["HP_COVER"].append(p)
+            classified["HP_COVER"].append(it)
         elif "NEW POLE" in folder:
-            classified["NEW_POLE"].append(p)
+            classified["NEW_POLE"].append(it)
         elif "EXISTING" in folder or "EMR" in folder:
-            classified["EXISTING_POLE"].append(p)
+            classified["EXISTING_POLE"].append(it)
         elif "BOUNDARY" in folder:
-            classified["BOUNDARY"].append(p)
+            classified["BOUNDARY"].append(it)
         elif "DISTRIBUTION CABLE" in folder:
-            classified["DISTRIBUTION_CABLE"].append(p)
+            classified["DISTRIBUTION_CABLE"].append(it)
         elif "SLING WIRE" in folder:
-            classified["SLING_WIRE"].append(p)
+            classified["SLING_WIRE"].append(it)
         else:
-            classified["POLE"].append(p)
+            classified["POLE"].append(it)
     return classified
 
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
-    # Cari referensi matchprop dari template
-    matchprop_hp = None
-    matchprop_pole = None
-    matchprop_sr = None
-    matchprop_boundary = None
-    matchprop_dist_cable = None
-    matchprop_sling_wire = None
+    matchprop_hp = matchprop_pole = matchprop_sr = None
+    matchprop_boundary = matchprop_dist_cable = matchprop_sling_wire = None
 
-    for e in template_msp.query('TEXT'):
-        txt = e.dxf.text.upper()
-        if 'NN-' in txt:
-            matchprop_hp = e.dxf
-        elif 'MR.SRMRW16' in txt:
-            matchprop_pole = e.dxf
-        elif 'SRMRW16.067.B01' in txt:
-            matchprop_sr = e.dxf
-
-    # Cari sample entity berdasarkan layer untuk BOUNDARY, DISTRIBUTION CABLE, SLING WIRE
-    for e in template_msp:
+    for e in template_msp.query('*'):
+        if e.dxftype() == 'TEXT':
+            txt = e.dxf.text.upper()
+            if 'NN-' in txt:
+                matchprop_hp = e.dxf
+            elif 'MR.SRMRW16' in txt:
+                matchprop_pole = e.dxf
+            elif 'SRMRW16.067.B01' in txt:
+                matchprop_sr = e.dxf
         if e.dxf.layer.upper() == "FAT AREA":
             matchprop_boundary = e.dxf
         elif e.dxf.layer.upper() == "FO 36 CORE":
@@ -121,64 +144,71 @@ def draw_to_dxf(classified, template_path):
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
-    all_points_xy = []
-    for category in classified.values():
-        for p in category:
-            all_points_xy.append(latlon_to_xy(p['latitude'], p['longitude']))
+    all_xy = []
+    for cat_items in classified.values():
+        for obj in cat_items:
+            if obj['type'] == 'point':
+                all_xy.append(latlon_to_xy(obj['latitude'], obj['longitude']))
+            elif obj['type'] == 'path':
+                all_xy.extend([latlon_to_xy(lat, lon) for lat, lon in obj['coords']])
 
-    if not all_points_xy:
-        st.error("❌ Tidak ada titik ditemukan di KMZ!")
+    if not all_xy:
+        st.error("❌ Tidak ada data dari KMZ!")
         return None
 
-    shifted_points, (cx, cy) = apply_offset(all_points_xy)
+    shifted_all, (cx, cy) = apply_offset(all_xy)
 
     idx = 0
-    for category_name, category in classified.items():
-        for i in range(len(category)):
-            category[i]['xy'] = shifted_points[idx]
-            idx += 1
+    for cat_name, cat_items in classified.items():
+        for obj in cat_items:
+            if obj['type'] == 'point':
+                obj['xy'] = shifted_all[idx]
+                idx += 1
+            elif obj['type'] == 'path':
+                obj['xy_path'] = shifted_all[idx: idx + len(obj['coords'])]
+                idx += len(obj['coords'])
 
     for layer_name, data in classified.items():
         if layer_name not in doc.layers:
             doc.layers.add(name=layer_name)
+
         for obj in data:
-            x, y = obj['xy']
-
-            if obj['folder'] not in target_folders:
-                msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
-
-            # Tentukan matchprop berdasarkan kategori
-            if layer_name == "HP_COVER":
-                matchprop = matchprop_hp
-            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
-                matchprop = matchprop_pole
-            elif layer_name in ["FAT", "FDT"]:
-                matchprop = matchprop_sr
-            elif layer_name == "BOUNDARY":
-                matchprop = matchprop_boundary
-            elif layer_name == "DISTRIBUTION_CABLE":
-                matchprop = matchprop_dist_cable
-            elif layer_name == "SLING_WIRE":
-                matchprop = matchprop_sling_wire
-            else:
-                matchprop = None
-
-            if matchprop:
+            if obj['type'] == 'point':
+                x, y = obj['xy']
+                # Tentukan matchprop
+                if layer_name == "HP_COVER":
+                    matchprop = matchprop_hp
+                elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                    matchprop = matchprop_pole
+                elif layer_name in ["FAT", "FDT"]:
+                    matchprop = matchprop_sr
+                else:
+                    matchprop = None
                 attribs = {
-                    "height": getattr(matchprop, "height", 1.5),
+                    "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
                     "layer": layer_name,
-                    "color": getattr(matchprop, "color", 256),
+                    "color": getattr(matchprop, "color", 256) if matchprop else 256,
                     "insert": (x + 2, y)
                 }
-            else:
-                attribs = {"height": 1.5, "layer": layer_name, "insert": (x + 2, y)}
+                msp.add_text(obj["name"], dxfattribs=attribs)
 
-            msp.add_text(obj["name"], dxfattribs=attribs)
+            elif obj['type'] == 'path':
+                if layer_name == "BOUNDARY":
+                    matchprop = matchprop_boundary
+                elif layer_name == "DISTRIBUTION_CABLE":
+                    matchprop = matchprop_dist_cable
+                elif layer_name == "SLING_WIRE":
+                    matchprop = matchprop_sling_wire
+                else:
+                    matchprop = None
+                attribs = {"layer": layer_name}
+                if matchprop:
+                    attribs["color"] = getattr(matchprop, "color", 256)
+                msp.add_lwpolyline(obj['xy_path'], dxfattribs=attribs)
 
     return doc
 
-st.title("🏗️ KMZ → DXF Converter with Matchprop")
-st.write("Konversi file KMZ menjadi DXF dengan properti teks yang ditiru dari template (matchprop).")
+st.title("🏗️ KMZ → DXF Converter with Matchprop + Path Support")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
@@ -193,9 +223,8 @@ if uploaded_kmz and uploaded_template:
 
     with st.spinner("🔍 Memproses data..."):
         kml_path = extract_kmz(uploaded_kmz, extract_dir)
-        points = parse_kml(kml_path)
-        classified = classify_points(points)
-
+        items = parse_kml(kml_path)
+        classified = classify_items(items)
         updated_doc = draw_to_dxf(classified, "template_ref.dxf")
         if updated_doc:
             updated_doc.saveas(output_dxf)
@@ -204,7 +233,3 @@ if uploaded_kmz and uploaded_template:
         st.success("✅ Konversi berhasil! DXF sudah dibuat.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
-
-        st.markdown("### 📊 Ringkasan Objek")
-        for layer_name, objs in classified.items():
-            st.write(f"- **{layer_name}**: {len(objs)} titik")
