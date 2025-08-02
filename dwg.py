@@ -100,16 +100,13 @@ def draw_to_dxf(classified, template_path):
     # Salin block NW dari template
     if "NW" in template_doc.blocks:
         if "NW" not in doc.blocks:
-            source_block = template_doc.blocks.get("NW")
             try:
-                target_block = doc.blocks.new(name="NW", base_point=source_block.block.dxf.base_point)
+                source_block = template_doc.blocks["NW"]
+                new_block = doc.blocks.new(name="NW")
                 for entity in source_block:
-                    try:
-                        target_block.add_entity(entity.copy())
-                    except Exception as e:
-                        st.warning(f"⚠️ Gagal menyalin entitas dalam block NW: {e}")
+                    new_block.add_entity(entity.copy())
             except Exception as e:
-                st.warning(f"⚠️ Gagal membuat block NW: {e}")
+                st.warning(f"⚠️ Gagal menyalin block NW: {e}")
     else:
         st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
 
