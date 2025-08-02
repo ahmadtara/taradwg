@@ -4,4 +4,4 @@ pyproj
 requests
 lxml
 fastkml
-shapely==2.1.1
+shapely
