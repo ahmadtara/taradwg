@@ -115,11 +115,20 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            # Skip circle untuk NEW/EXISTING POLE
-            if layer_name not in ["HP_COVER", "NEW_POLE", "EXISTING_POLE"]:
+            # Tambahkan block NW untuk NEW/EXISTING POLE
+            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                try:
+                    if "NW" in template_doc.blocks:
+                        msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+                    else:
+                        st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
+                except Exception as e:
+                    st.error(f"❌ Gagal insert block NW: {e}")
+            # Tambahkan lingkaran untuk selain HP_COVER, NEW_POLE, EXISTING_POLE
+            elif layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            # Tentukan matchprop
+            # Tentukan matchprop teks
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
@@ -129,18 +138,7 @@ def draw_to_dxf(classified, template_path):
             else:
                 matchprop = None
 
-            # Insert block 'NW' untuk NEW/EXISTING POLE
-            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
-                try:
-                    if "NW" in template_doc.blocks:
-                        msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
-                    else:
-                        st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
-                except Exception as e:
-                    st.error(f"❌ Gagal insert block NW: {e}")
-                continue  # Lewati teks karena block sudah ada
-
-            # Tambahkan teks jika bukan NEW/EXISTING POLE
+            # Tambahkan teks semua titik
             if matchprop:
                 attribs = {
                     "height": matchprop.height,
