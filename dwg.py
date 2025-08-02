@@ -76,17 +76,18 @@ def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
-    # Matchprop berdasarkan isi teks
     matchprop_hp = None
     matchprop_pole = None
+    matchprop_sr = None
+
     for e in template_msp.query('TEXT'):
         txt = e.dxf.text.upper()
-        if 'NN-25' in txt:
+        if 'NN-' in txt:
             matchprop_hp = e.dxf
         elif 'MR.SRMRW16' in txt:
             matchprop_pole = e.dxf
-        if matchprop_hp and matchprop_pole:
-            break
+        elif 'SRMRW16.067.B01' in txt:
+            matchprop_sr = e.dxf
 
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
@@ -113,10 +114,19 @@ def draw_to_dxf(classified, template_path):
             doc.layers.add(name=layer_name)
         for obj in data:
             x, y = obj['xy']
+
             if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
-            matchprop = matchprop_hp if layer_name == "HP_COVER" else matchprop_pole
+            if layer_name == "HP_COVER":
+                matchprop = matchprop_hp
+            elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                matchprop = matchprop_pole
+            elif layer_name in ["FAT", "FDT"]:
+                matchprop = matchprop_sr
+            else:
+                matchprop = None
+
             if matchprop:
                 attribs = {
                     "height": matchprop.height,
