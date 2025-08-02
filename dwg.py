@@ -5,7 +5,7 @@ from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter with Matchprop + Path Support", layout="wide")
+st.set_page_config(page_title="KMZ → DXF ke Template", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
@@ -118,28 +118,16 @@ def classify_items(items):
             classified["POLE"].append(it)
     return classified
 
-def draw_to_dxf(classified, template_path):
-    template_doc = ezdxf.readfile(template_path)
-    template_msp = template_doc.modelspace()
-
-    # Copy semua layer dari template ke dokumen baru
-    doc = ezdxf.new(dxfversion="R2010")
-    for layer in template_doc.layers:
-        if layer.dxf.name not in doc.layers:
-            doc.layers.new(name=layer.dxf.name,
-                           dxfattribs={
-                               "color": layer.dxf.color,
-                               "linetype": layer.dxf.linetype,
-                               "lineweight": layer.dxf.lineweight
-                           })
-
+def draw_to_template(classified, template_path):
+    # Baca template asli
+    doc = ezdxf.readfile(template_path)
     msp = doc.modelspace()
 
-    # Cari sample entity untuk matchprop
+    # Ambil referensi matchprop dari template
     matchprop_hp = matchprop_pole = matchprop_sr = None
     matchprop_boundary = matchprop_dist_cable = matchprop_sling_wire = None
 
-    for e in template_msp.query('*'):
+    for e in msp.query('*'):
         if e.dxftype() == 'TEXT':
             txt = e.dxf.text.upper()
             if 'NN-' in txt:
@@ -155,6 +143,7 @@ def draw_to_dxf(classified, template_path):
         elif e.dxf.layer.upper() == "FO STRAND AE":
             matchprop_sling_wire = e.dxf
 
+    # Hitung offset semua koordinat
     all_xy = []
     for cat_items in classified.values():
         for obj in cat_items:
@@ -170,7 +159,7 @@ def draw_to_dxf(classified, template_path):
     shifted_all, (cx, cy) = apply_offset(all_xy)
 
     idx = 0
-    for cat_name, cat_items in classified.items():
+    for cat_items in classified.values():
         for obj in cat_items:
             if obj['type'] == 'point':
                 obj['xy'] = shifted_all[idx]
@@ -179,6 +168,7 @@ def draw_to_dxf(classified, template_path):
                 obj['xy_path'] = shifted_all[idx: idx + len(obj['coords'])]
                 idx += len(obj['coords'])
 
+    # Gambar ke template
     for layer_name, data in classified.items():
         for obj in data:
             if obj['type'] == 'point':
@@ -215,7 +205,7 @@ def draw_to_dxf(classified, template_path):
 
     return doc
 
-st.title("🏗️ KMZ → DXF Converter with Matchprop + Path Support + Layer Copy")
+st.title("🏗️ KMZ → DXF (Masuk ke Template)")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
@@ -232,11 +222,11 @@ if uploaded_kmz and uploaded_template:
         kml_path = extract_kmz(uploaded_kmz, extract_dir)
         items = parse_kml(kml_path)
         classified = classify_items(items)
-        updated_doc = draw_to_dxf(classified, "template_ref.dxf")
+        updated_doc = draw_to_template(classified, "template_ref.dxf")
         if updated_doc:
             updated_doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF sudah dibuat.")
+        st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
         with open(output_dxf, "rb") as f:
             st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
