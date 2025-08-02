@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import zipfile
 import os
 from xml.etree import ElementTree as ET
@@ -9,9 +9,8 @@ st.set_page_config(page_title="KMZ → DXF Converter with Matchprop", layout="wi
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
-# Tambahkan FOLDER YANG DIPAKAI
 target_folders = {
-    'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3', 'FAT', 'FDT'
+    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3'
 }
 
 def extract_kmz(kmz_path, extract_dir):
@@ -55,50 +54,42 @@ def apply_offset(points_xy):
 
 def classify_points(points):
     classified = {
-        "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "FAT": [], "FDT": []
+        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
     }
     for p in points:
         folder = p['folder']
-        if "HP COVER" in folder:
+        if "FDT" in folder:
+            classified["FDT"].append(p)
+        elif "FAT" in folder:
+            classified["FAT"].append(p)
+        elif "HP COVER" in folder:
             classified["HP_COVER"].append(p)
         elif "NEW POLE" in folder:
             classified["NEW_POLE"].append(p)
-        elif "EXISTING POLE" in folder:
+        elif "EXISTING" in folder or "EMR" in folder:
             classified["EXISTING_POLE"].append(p)
-        elif "FAT" in folder:
-            classified["FAT"].append(p)
-        elif "FDT" in folder:
-            classified["FDT"].append(p)
+        else:
+            classified["POLE"].append(p)
     return classified
 
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
 
-    if "NW" not in template_doc.blocks:
-        st.error("❌ Block 'NW' tidak ditemukan dalam template DXF.")
-        return None
-
     matchprop_hp = None
     matchprop_pole = None
     matchprop_sr = None
+
     for e in template_msp.query('TEXT'):
         txt = e.dxf.text.upper()
-        if 'NN-' in txt and not matchprop_hp:
+        if 'NN-' in txt:
             matchprop_hp = e.dxf
-        if 'MR.SRMRW16' in txt and not matchprop_pole:
+        elif 'MR.SRMRW16' in txt:
             matchprop_pole = e.dxf
-        if 'SRMRW16.067.B01' in txt and not matchprop_sr:
+        elif 'SRMRW16.067.B01' in txt:
             matchprop_sr = e.dxf
 
     doc = ezdxf.new(dxfversion="R2010")
-
-    # Salin definisi block NW dari template ke dokumen baru
-    if "NW" in template_doc.blocks:
-        new_block = doc.blocks.new(name="NW")
-        for entity in template_doc.blocks["NW"]:
-            new_block.add_entity(entity.copy())
-
     msp = doc.modelspace()
 
     all_points_xy = []
@@ -124,6 +115,11 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
+            # Skip circle untuk NEW/EXISTING POLE
+            if layer_name not in ["HP_COVER", "NEW_POLE", "EXISTING_POLE"]:
+                msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+
+            # Tentukan matchprop
             if layer_name == "HP_COVER":
                 matchprop = matchprop_hp
             elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
@@ -133,9 +129,18 @@ def draw_to_dxf(classified, template_path):
             else:
                 matchprop = None
 
-            if layer_name != "HP_COVER":
-                msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+            # Insert block 'NW' untuk NEW/EXISTING POLE
+            if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
+                try:
+                    if "NW" in template_doc.blocks:
+                        msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
+                    else:
+                        st.warning("⚠️ Block 'NW' tidak ditemukan di template.")
+                except Exception as e:
+                    st.error(f"❌ Gagal insert block NW: {e}")
+                continue  # Lewati teks karena block sudah ada
 
+            # Tambahkan teks jika bukan NEW/EXISTING POLE
             if matchprop:
                 attribs = {
                     "height": matchprop.height,
