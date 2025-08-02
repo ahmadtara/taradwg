@@ -4,3 +4,4 @@ pyproj
 requests
 lxml
 fastkml
+shapely
