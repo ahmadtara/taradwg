@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter", layout="wide")
+st.set_page_config(page_title="KMZ → DXF Converter (No Lines)", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
@@ -48,26 +48,6 @@ def parse_kml(kml_path):
                 })
     return points
 
-def parse_boundaries(kml_path):
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    with open(kml_path, 'rb') as f:
-        tree = ET.parse(f)
-    root = tree.getroot()
-    boundaries = []
-    for folder in root.findall(".//kml:Folder", ns):
-        name_tag = folder.find('kml:name', ns)
-        if name_tag is not None and name_tag.text.strip().upper() == "BOUNDARY":
-            placemarks = folder.findall(".//kml:Placemark", ns)
-            for pm in placemarks:
-                coords = pm.find('.//kml:coordinates', ns)
-                if coords is not None:
-                    coord_list = []
-                    for pair in coords.text.strip().split():
-                        lon, lat, *_ = map(float, pair.split(','))
-                        coord_list.append(latlon_to_xy(lat, lon))
-                    boundaries.append(coord_list)
-    return boundaries
-
 def latlon_to_xy(lat, lon):
     x, y = transformer.transform(lon, lat)
     return x, y
@@ -99,7 +79,7 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
-def draw_to_dxf(classified, boundaries):
+def draw_to_dxf(classified):
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
 
@@ -132,42 +112,36 @@ def draw_to_dxf(classified, boundaries):
                 "insert": (x + 2, y)
             })
 
-    for polygon in boundaries:
-        shifted_polygon, _ = apply_offset(polygon)
-        msp.add_lwpolyline(shifted_polygon, close=True, dxfattribs={"layer": "BOUNDARY"})
-
-    # Hapus semua selain circle, text, dan lwpolyline
-    valid_types = {"CIRCLE", "TEXT", "LWPOLYLINE"}
-    to_delete = [e for e in msp if e.dxftype() not in valid_types]
-    for e in to_delete:
-        msp.delete_entity(e)
+    # Hapus semua entity kecuali CIRCLE dan TEXT
+    for e in list(msp):
+        if e.dxftype() not in {"CIRCLE", "TEXT"}:
+            msp.delete_entity(e)
 
     return doc
 
 # STREAMLIT APP
-st.title("📍 Konversi KMZ → DXF (UTM Zone 60, Clean Output)")
-st.write("Upload file .KMZ lalu hasilnya akan digambar ke UTM Zone 60 tanpa bentuk kotak/rectangle tambahan.")
+st.title("📍 Konversi KMZ → DXF (UTM Zone 60, Hanya Titik & Teks)")
+st.write("Upload file .KMZ, hasil hanya akan berisi titik dan teks tanpa garis atau kotak apa pun.")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 
 if uploaded_kmz:
     extract_dir = "temp_kmz"
     os.makedirs(extract_dir, exist_ok=True)
-    output_dxf = "output_kmz_clean.dxf"
+    output_dxf = "clean_no_lines_output.dxf"
 
     with st.spinner("🚀 Memproses file..."):
         kml_path = extract_kmz(uploaded_kmz, extract_dir)
         points = parse_kml(kml_path)
         classified = classify_points(points)
-        boundaries = parse_boundaries(kml_path)
-        doc = draw_to_dxf(classified, boundaries)
+        doc = draw_to_dxf(classified)
         if doc:
             doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
-        st.success("✅ DXF berhasil dibuat tanpa objek kotak tambahan.")
+        st.success("✅ DXF berhasil dibuat tanpa polygon, kotak, atau garis.")
         with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name="clean_output.dxf")
+            st.download_button("⬇️ Download DXF", f, file_name=output_dxf)
 
         st.markdown("### 🔎 Ringkasan Titik:")
         for layer_name, objs in classified.items():
