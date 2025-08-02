@@ -72,16 +72,6 @@ def classify_points(points):
             classified["POLE"].append(p)
     return classified
 
-def clone_block_if_needed(source_doc, target_doc, block_name):
-    if block_name in target_doc.blocks:
-        return
-    if block_name not in source_doc.blocks:
-        raise ValueError(f"Block '{block_name}' tidak ditemukan di template.")
-    source_block = source_doc.blocks[block_name]
-    new_block = target_doc.blocks.new(name=block_name)
-    for e in source_block:
-        new_block.add_entity(e.copy())
-
 def draw_to_dxf(classified, template_path):
     template_doc = ezdxf.readfile(template_path)
     template_msp = template_doc.modelspace()
@@ -101,8 +91,6 @@ def draw_to_dxf(classified, template_path):
 
     doc = ezdxf.new(dxfversion="R2010")
     msp = doc.modelspace()
-
-    clone_block_if_needed(template_doc, doc, "NW")
 
     all_points_xy = []
     for category in classified.values():
@@ -127,10 +115,7 @@ def draw_to_dxf(classified, template_path):
         for obj in data:
             x, y = obj['xy']
 
-            name_upper = obj['name'].upper()
-            if name_upper in ["NEW POLE 7-3", "NEW POLE 7-4", "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 7-4"]:
-                msp.add_blockref("NW", (x, y), dxfattribs={"layer": layer_name})
-            elif layer_name != "HP_COVER":
+            if layer_name != "HP_COVER":
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
 
             if layer_name == "HP_COVER":
