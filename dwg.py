@@ -117,31 +117,7 @@ def classify_paths(paths):
 
 def draw_to_dxf(classified_points, classified_paths, template_path):
     template_doc = ezdxf.readfile(template_path)
-    template_msp = template_doc.modelspace()
-
-    matchprop_hp = matchprop_pole = matchprop_sr = None
-    matchprop_boundary = matchprop_dist = matchprop_sling = None
-
-    for e in template_msp:
-        layer = e.dxf.layer.upper()
-        txt = getattr(e.dxf, 'text', '').upper() if hasattr(e.dxf, 'text') else ''
-
-        if 'NN-' in txt:
-            matchprop_hp = e.dxf
-        elif 'MR.SRMRW16' in txt:
-            matchprop_pole = e.dxf
-        elif 'SRMRW16.067.B01' in txt:
-            matchprop_sr = e.dxf
-
-        if layer == "FAT AREA":
-            matchprop_boundary = e.dxf
-        elif layer == "FO 36 CORE":
-            matchprop_dist = e.dxf
-        elif layer == "FO STRAND AE":
-            matchprop_sling = e.dxf
-
-    doc = ezdxf.new(dxfversion="R2010")
-    msp = doc.modelspace()
+    msp = template_doc.modelspace()
 
     all_points_xy = [latlon_to_xy(p['latitude'], p['longitude']) for c in classified_points.values() for p in c]
     if not all_points_xy:
@@ -151,7 +127,7 @@ def draw_to_dxf(classified_points, classified_paths, template_path):
     shifted_points, (cx, cy) = apply_offset(all_points_xy)
 
     idx = 0
-    for category_name, category in classified_points.items():
+    for category in classified_points.values():
         for i in range(len(category)):
             category[i]['xy'] = shifted_points[idx]
             idx += 1
@@ -159,47 +135,19 @@ def draw_to_dxf(classified_points, classified_paths, template_path):
     for layer_name, data in classified_points.items():
         for obj in data:
             x, y = obj['xy']
-
             if layer_name in ["NEW_POLE", "EXISTING_POLE"]:
                 msp.add_blockref('NW', insert=(x, y), dxfattribs={"layer": layer_name})
             else:
                 msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+            msp.add_text(obj["name"], dxfattribs={"layer": layer_name, "insert": (x + 2, y)})
 
-            matchprop = {
-                "HP_COVER": matchprop_hp,
-                "NEW_POLE": matchprop_pole,
-                "EXISTING_POLE": matchprop_pole,
-                "FAT": matchprop_sr,
-                "FDT": matchprop_sr
-            }.get(layer_name, None)
-
-            attribs = {
-                "height": matchprop.height if matchprop else 1.5,
-                "layer": layer_name,
-                "color": matchprop.color if matchprop else 0,
-                "insert": (x + 2, y)
-            }
-            msp.add_text(obj["name"], dxfattribs=attribs)
-
-    # Gambar paths
     for layer, items in classified_paths.items():
-        match = {
-            "BOUNDARY": matchprop_boundary,
-            "DISTRIBUTION_CABLE": matchprop_dist,
-            "SLING_WIRE": matchprop_sling
-        }.get(layer)
-
         for p in items:
             points_xy = [latlon_to_xy(lat, lon) for lat, lon in p['path']]
             shifted = [(x - cx, y - cy) for x, y in points_xy]
-            msp.add_lwpolyline(shifted, close=False, dxfattribs={
-                "layer": match.layer if match else layer,
-                "linetype": match.linetype if match else 'Continuous',
-                "color": match.color if match else 7,
-                "lineweight": match.lineweight if match else 25
-            })
+            msp.add_lwpolyline(shifted, close=False, dxfattribs={"layer": layer})
 
-    return doc
+    return template_doc
 
 # UI
 st.title("🏗️ KMZ → DXF Converter with Matchprop")
