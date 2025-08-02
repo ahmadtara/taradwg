@@ -1,12 +1,11 @@
-import streamlit as st
+import streamlit as st 
 import zipfile
 import os
-import math
 from xml.etree import ElementTree as ET
 import ezdxf
 from pyproj import Transformer
 
-st.set_page_config(page_title="KMZ → DXF Converter (No Lines)", layout="wide")
+st.set_page_config(page_title="KMZ → DXF Converter", layout="wide")
 
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
@@ -40,12 +39,7 @@ def parse_kml(kml_path):
             if name is not None and coord is not None:
                 name_text = name.text.strip()
                 lon, lat, *_ = coord.text.strip().split(',')
-                points.append({
-                    'name': name_text,
-                    'latitude': float(lat),
-                    'longitude': float(lon),
-                    'folder': folder_name
-                })
+                points.append({'name': name_text, 'latitude': float(lat), 'longitude': float(lon), 'folder': folder_name})
     return points
 
 def latlon_to_xy(lat, lon):
@@ -60,10 +54,10 @@ def apply_offset(points_xy):
 
 def classify_points(points):
     classified = {
-        "FDT": [], "FAT": [], "HP_COVER": [],
-        "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
+        "FDT": [], "FAT": [], "HP_COVER": [], "NEW_POLE": [], "EXISTING_POLE": [], "POLE": []
     }
     for p in points:
+        name = p['name'].upper()
         folder = p['folder']
         if "FDT" in folder:
             classified["FDT"].append(p)
@@ -105,44 +99,45 @@ def draw_to_dxf(classified):
             doc.layers.add(name=layer_name)
         for obj in data:
             x, y = obj['xy']
-            msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+            
+            # ⛔️ Hapus lingkaran khusus HP COVER
+            if layer_name != "HP_COVER":
+                msp.add_circle((x, y), radius=2, dxfattribs={"layer": layer_name})
+            
+            # ✅ Tambah teks untuk semua layer
             msp.add_text(obj["name"], dxfattribs={
                 "height": 1.5,
                 "layer": layer_name,
                 "insert": (x + 2, y)
             })
 
-    # Hapus semua entity kecuali CIRCLE dan TEXT
-    for e in list(msp):
-        if e.dxftype() not in {"CIRCLE", "TEXT"}:
-            msp.delete_entity(e)
-
     return doc
 
-# STREAMLIT APP
-st.title("📍 Konversi KMZ → DXF (UTM Zone 60, Hanya Titik & Teks)")
-st.write("Upload file .KMZ, hasil hanya akan berisi titik dan teks tanpa garis atau kotak apa pun.")
+# Streamlit UI
+st.title("🏗️ KMZ → DXF Converter (No Polygon, Only Text on HP COVER)")
+st.write("Konversi file KMZ menjadi file DXF langsung tanpa upload template, tanpa garis boundary, dan tanpa lingkaran pada HP COVER.")
 
 uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
 
 if uploaded_kmz:
     extract_dir = "temp_kmz"
     os.makedirs(extract_dir, exist_ok=True)
-    output_dxf = "clean_no_lines_output.dxf"
+    output_dxf = "converted_output.dxf"
 
-    with st.spinner("🚀 Memproses file..."):
+    with st.spinner("🔍 Memproses data..."):
         kml_path = extract_kmz(uploaded_kmz, extract_dir)
         points = parse_kml(kml_path)
         classified = classify_points(points)
-        doc = draw_to_dxf(classified)
-        if doc:
-            doc.saveas(output_dxf)
+
+        updated_doc = draw_to_dxf(classified)
+        if updated_doc:
+            updated_doc.saveas(output_dxf)
 
     if os.path.exists(output_dxf):
-        st.success("✅ DXF berhasil dibuat tanpa polygon, kotak, atau garis.")
+        st.success("✅ Konversi berhasil! DXF sudah dibuat.")
         with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name=output_dxf)
+            st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
 
-        st.markdown("### 🔎 Ringkasan Titik:")
+        st.markdown("### 📊 Ringkasan Objek")
         for layer_name, objs in classified.items():
             st.write(f"- **{layer_name}**: {len(objs)} titik")
