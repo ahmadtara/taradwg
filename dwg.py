@@ -23,7 +23,7 @@ def authenticate_google():
     return client
 
 def extract_points_from_kmz(kmz_path):
-    fat_points, poles = [], []
+    fat_points, poles, poles_subfeeder = [], [], []
 
     def recurse_folder(folder, ns, path=""):
         items = []
@@ -44,7 +44,7 @@ def extract_points_from_kmz(kmz_path):
         kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
         if not kml_file:
             st.error("❌ Tidak ditemukan file .kml dalam .kmz")
-            return [], []
+            return [], [], []
 
         root = ET.parse(zf.open(kml_file)).getroot()
         ns = {"kml": "http://www.opengis.net/kml/2.2"}
@@ -57,9 +57,13 @@ def extract_points_from_kmz(kmz_path):
         if base_folder == "FAT":
             fat_points.append(p)
         elif base_folder == "NEW POLE 7-3":
-            poles.append(p)
+            poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
+        elif base_folder == "NEW POLE 7-4":
+            poles.append({**p, "folder": "7m4inch", "height": "7", "remarks": "SUBFEEDER"})
+        elif base_folder == "NEW POLE 9-4":
+            poles.append({**p, "folder": "9m4inch", "height": "9", "remarks": "CLUSTER"})
 
-    return fat_points, poles
+    return fat_points, poles, []
 
 def find_nearest_pole(fat_point, poles):
     min_dist = float('inf')
@@ -90,42 +94,110 @@ def append_fat_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor)
     for fat in fat_points:
         row = [""] * len(headers)
 
-        for col_idx in range(5):  # kolom A-E
+        for col_idx in range(5):
             row[col_idx] = prev_row[col_idx] if col_idx < len(prev_row) else ""
 
-        row[5] = district.upper()       # Kolom F
-        row[6] = subdistrict.upper()   # Kolom G
-        row[7] = fat['name']           # Kolom H
-        row[8] = fat['name']           # Kolom I
-        row[9] = fat['lat']            # Kolom J
-        row[10] = fat['lon']           # Kolom K
+        row[5] = district.upper()
+        row[6] = subdistrict.upper()
+        row[7] = fat['name']
+        row[8] = fat['name']
+        row[9] = fat['lat']
+        row[10] = fat['lon']
 
-        for idx in range(11, 24):      # Kolom L-X
+        for idx in range(11, 24):
             row[idx] = prev_row[idx] if idx < len(prev_row) else ""
 
-        row[24] = vendor.upper()       # Kolom Y
-        row[26] = formatted_date       # Kolom AA
+        row[24] = vendor.upper()
+        row[26] = formatted_date
 
-        # Kolom AG
         idx_ag = header_map.get('parentid 1')
-        if idx_ag:
-            row[idx_ag] = find_nearest_pole(fat, poles)
+        if idx_ag is not None:
+            row[idx_ag] = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m3inch'])
 
-        # Kolom AH-AI
         for col in ['parent_type 1', 'fat type']:
             idx = header_map.get(col.lower())
-            if idx:
+            if idx is not None:
                 row[idx] = prev_row[idx]
 
-        # Kolom AL
         idx_al = header_map.get('vendor name')
-        if idx_al:
+        if idx_al is not None:
             row[idx_al] = vendor.upper()
 
         all_rows.append(row)
 
     sheet.append_rows(all_rows)
     st.success(f"✅ {len(fat_points)} FAT berhasil dikirim ke Spreadsheet ke-2 🛰️")
+
+def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
+    global _cached_headers, _cached_prev_row
+
+    headers = _cached_headers or sheet.row_values(1)
+    _cached_headers = headers
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
+
+    values = sheet.get_all_values()
+    for i in range(len(values)-1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
+
+    _cached_prev_row = prev_row
+
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map.get('installationdate', 0)].count("/") == 2 else today.strftime("%Y-%m-%d")
+
+    count_types = {"7m3inch": 0, "7m4inch": 0, "9m4inch": 0}
+
+    district = district.upper()
+    subdistrict = subdistrict.upper()
+    vendor = vendor.upper()
+
+    all_rows = []
+    for pole in poles:
+        count_types[pole['folder']] += 1
+
+        row = [""] * len(headers)
+        row[0:4] = prev_row[0:4]
+        row[4] = district
+        row[5] = subdistrict
+        row[6] = pole['name']
+        row[7] = pole['name']
+        row[8] = pole['lat']
+        row[9] = pole['lon']
+
+        for col in ['constructionstage', 'accessibility', 'activationstage', 'hierarchytype']:
+            if col in header_map:
+                row[header_map[col]] = prev_row[header_map[col]]
+
+        for col in ['pole height', 'vendorname', 'installationyear', 'productionyear', 'installationdate', 'remarks']:
+            idx = header_map.get(col.lower())
+            if idx is not None:
+                if col.lower() == 'pole height':
+                    row[idx] = pole['height']
+                elif col.lower() == 'vendorname':
+                    row[idx] = vendor
+                elif col.lower() in ['installationyear', 'productionyear']:
+                    row[idx] = str(today.year)
+                elif col.lower() == 'installationdate':
+                    row[idx] = formatted_date
+                elif col.lower() == 'remarks':
+                    row[idx] = pole['remarks']
+
+        if 'poletype' in header_map:
+            row[header_map['poletype']] = pole['folder']
+
+        all_rows.append(row)
+
+    sheet.append_rows(all_rows)
+
+    st.info(f"""
+📊 **Ringkasan Pengunggahan**:
+- 7m3inch: {count_types['7m3inch']} titik
+- 7m4inch: {count_types['7m4inch']} titik
+- 9m4inch: {count_types['9m4inch']} titik
+""")
 
 # === STREAMLIT INTERFACE ===
 st.set_page_config(page_title="Uploader Pole KMZ", layout="centered")
@@ -139,7 +211,7 @@ with col2:
 with col3:
     vendor_input = st.text_input("Vendor Name (AB)")
 
-uploaded_cluster = st.file_uploader("📤 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE 7-3)", type=["kmz"])
+uploaded_cluster = st.file_uploader("📤 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
 
 submit_clicked = st.button("🚀 Submit dan Kirim ke Google Sheet")
 
@@ -153,14 +225,21 @@ if submit_clicked:
             tmp.write(uploaded_cluster.read())
             kmz_path = tmp.name
 
-        with st.spinner("🔍 Membaca data FAT dan Pole dari KMZ..."):
-            fat_points, poles = extract_points_from_kmz(kmz_path)
+        with st.spinner("🔍 Membaca data dari KMZ..."):
+            fat_points, poles_cluster, _ = extract_points_from_kmz(kmz_path)
+
+        try:
+            client = authenticate_google()
+            sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
+            if poles_cluster:
+                append_poles_to_main_sheet(sheet1, poles_cluster, district_input, subdistrict_input, vendor_input)
+        except Exception as e:
+            st.error(f"❌ Gagal mengirim ke spreadsheet utama: {e}")
 
         if fat_points:
             try:
-                client = authenticate_google()
                 sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
-                append_fat_to_sheet(sheet2, fat_points, poles, district_input, subdistrict_input, vendor_input)
+                append_fat_to_sheet(sheet2, fat_points, poles_cluster, district_input, subdistrict_input, vendor_input)
             except Exception as e:
                 st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
         else:
