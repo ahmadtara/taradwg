@@ -13,7 +13,7 @@ from google.oauth2 import service_account
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
 SHEET_NAME = "Pole Pekanbaru"
-
+SHEET_NAME_2 = "FAT Pekanbaru"
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
 SPREADSHEET_ID_4 = "1D_OMm46yr-e80s3sCyvbSSsf8wrUCwpwiYsVBKPgszw"
 SPREADSHEET_ID_5 = "1paa8sT3nTZh_xxwHeKV8pwVIWacq7lC8U9A8BlX6LUw"
@@ -79,5 +79,6 @@ def upload_kml_to_drive(kmz_path):
                     ).execute()
                     st.success(f"📄 File {file} berhasil diupload ke folder {folder_name} di Google Drive.")
 
-from .spreadsheet_main import append_poles_to_main_sheet, append_fat_to_sheet
-from .spreadsheet_extra import append_to_fdt_sheet, append_to_cable_cluster_sheet, append_to_subfeeder_cable_sheet
+from sheet_writer import append_poles_to_main_sheet, append_fat_to_sheet
+from sheet_writer import append_to_fdt_sheet, append_to_cable_cluster_sheet, append_to_subfeeder_cable_sheet
+from kmz_parser import extract_points_from_kmz
