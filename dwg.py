@@ -58,12 +58,13 @@ def extract_points_from_kmz(kmz_path):
             fat_points.append(p)
         elif base_folder == "NEW POLE 7-3":
             poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
+            poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
         elif base_folder == "NEW POLE 7-4":
             poles.append({**p, "folder": "7m4inch", "height": "7", "remarks": "SUBFEEDER"})
         elif base_folder == "NEW POLE 9-4":
             poles.append({**p, "folder": "9m4inch", "height": "9", "remarks": "CLUSTER"})
 
-    return fat_points, poles, []
+    return fat_points, poles, poles_subfeeder
 
 def find_nearest_pole(fat_point, poles):
     min_dist = float('inf')
@@ -226,7 +227,7 @@ if submit_clicked:
             kmz_path = tmp.name
 
         with st.spinner("🔍 Membaca data dari KMZ..."):
-            fat_points, poles_cluster, _ = extract_points_from_kmz(kmz_path)
+            fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path)
 
         try:
             client = authenticate_google()
@@ -239,7 +240,7 @@ if submit_clicked:
         if fat_points:
             try:
                 sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
-                append_fat_to_sheet(sheet2, fat_points, poles_cluster, district_input, subdistrict_input, vendor_input)
+                append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
             except Exception as e:
                 st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
         else:
