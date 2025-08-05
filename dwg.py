@@ -60,9 +60,9 @@ def extract_points_from_kmz(kmz_path):
             poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
             poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
         elif base_folder == "NEW POLE 7-4":
-            poles.append({**p, "folder": "7m4inch", "height": "7", "remarks": "SUBFEEDER"})
+            poles.append({**p, "folder": "7m4inch", "height": "7"})
         elif base_folder == "NEW POLE 9-4":
-            poles.append({**p, "folder": "9m4inch", "height": "9", "remarks": "CLUSTER"})
+            poles.append({**p, "folder": "9m4inch", "height": "9"})
 
     return fat_points, poles, poles_subfeeder
 
@@ -184,7 +184,10 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
                 elif col.lower() == 'installationdate':
                     row[idx] = formatted_date
                 elif col.lower() == 'remarks':
-                    row[idx] = pole['remarks']
+                    if pole['folder'] in ['7m4inch', '9m4inch']:
+                        row[idx] = "SUBFEEDER"
+                    else:
+                        row[idx] = "CLUSTER"
 
         if 'poletype' in header_map:
             row[header_map['poletype']] = pole['folder']
@@ -213,6 +216,7 @@ with col3:
     vendor_input = st.text_input("Vendor Name (AB)")
 
 uploaded_cluster = st.file_uploader("📤 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
+uploaded_subfeeder = st.file_uploader("📤 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 
 submit_clicked = st.button("🚀 Submit dan Kirim ke Google Sheet")
 
@@ -220,13 +224,13 @@ if submit_clicked:
     if not district_input or not subdistrict_input or not vendor_input:
         st.warning("⚠️ Harap isi semua kolom input manual.")
     elif not uploaded_cluster:
-        st.warning("⚠️ Harap upload file KMZ.")
+        st.warning("⚠️ Harap upload file KMZ CLUSTER.")
     else:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
             tmp.write(uploaded_cluster.read())
             kmz_path = tmp.name
 
-        with st.spinner("🔍 Membaca data dari KMZ..."):
+        with st.spinner("🔍 Membaca data dari KMZ CLUSTER..."):
             fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path)
 
         try:
@@ -245,3 +249,19 @@ if submit_clicked:
                 st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
         else:
             st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
+
+    if uploaded_subfeeder:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+            tmp.write(uploaded_subfeeder.read())
+            kmz_path = tmp.name
+
+        with st.spinner("🔍 Membaca data dari KMZ SUBFEEDER..."):
+            _, poles_subonly, _ = extract_points_from_kmz(kmz_path)
+
+        try:
+            client = authenticate_google()
+            sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
+            if poles_subonly:
+                append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
+        except Exception as e:
+            st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
