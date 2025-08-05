@@ -11,6 +11,7 @@ dist = __import__('math').dist
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
 SHEET_NAME = "Pole Pekanbaru"
+SHEET_NAME_2 = "FAT Pekanbaru"
 
 _cached_headers = None
 _cached_prev_row = None
@@ -22,7 +23,7 @@ def authenticate_google():
     client = gspread.authorize(credentials)
     return client
 
-def extract_points_from_kmz(kmz_path):
+def extract_points_from_kmz(kmz_path, remarks_default):
     fat_points, poles, poles_subfeeder = [], [], []
 
     def recurse_folder(folder, ns, path=""):
@@ -56,13 +57,12 @@ def extract_points_from_kmz(kmz_path):
         base_folder = p["path"].split("/")[0].upper()
         if base_folder == "FAT":
             fat_points.append(p)
-        elif base_folder == "NEW POLE 7-3":
-            poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
-            poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
-        elif base_folder == "NEW POLE 7-4":
-            poles.append({**p, "folder": "7m4inch", "height": "7"})
-        elif base_folder == "NEW POLE 9-4":
-            poles.append({**p, "folder": "9m4inch", "height": "9"})
+        elif base_folder.startswith("NEW POLE"):
+            folder_type = "7m3inch" if "7-3" in base_folder else "9m4inch" if "9-4" in base_folder else "7m4inch"
+            height = "7" if "7" in folder_type else "9"
+            poles.append({**p, "folder": folder_type, "height": height, "remarks": remarks_default})
+            if folder_type == "7m3inch":
+                poles_subfeeder.append({**p, "folder": folder_type, "height": height})
 
     return fat_points, poles, poles_subfeeder
 
@@ -184,10 +184,7 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
                 elif col.lower() == 'installationdate':
                     row[idx] = formatted_date
                 elif col.lower() == 'remarks':
-                    if pole['folder'] in ['7m4inch', '9m4inch']:
-                        row[idx] = "SUBFEEDER"
-                    else:
-                        row[idx] = "CLUSTER"
+                    row[idx] = pole.get('remarks', "CLUSTER")
 
         if 'poletype' in header_map:
             row[header_map['poletype']] = pole['folder']
@@ -231,7 +228,7 @@ if submit_clicked:
             kmz_path = tmp.name
 
         with st.spinner("🔍 Membaca data dari KMZ CLUSTER..."):
-            fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path)
+            fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path, remarks_default="CLUSTER")
 
         try:
             client = authenticate_google()
@@ -243,7 +240,7 @@ if submit_clicked:
 
         if fat_points:
             try:
-                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
+                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
                 append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
             except Exception as e:
                 st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
@@ -256,7 +253,7 @@ if submit_clicked:
             kmz_path = tmp.name
 
         with st.spinner("🔍 Membaca data dari KMZ SUBFEEDER..."):
-            _, poles_subonly, _ = extract_points_from_kmz(kmz_path)
+            _, poles_subonly, _ = extract_points_from_kmz(kmz_path, remarks_default="SUBFEEDER")
 
         try:
             client = authenticate_google()
