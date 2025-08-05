@@ -1,219 +1,167 @@
 import streamlit as st
 import zipfile
-import os
-from xml.etree import ElementTree as ET
-import ezdxf
-from pyproj import Transformer
+import xml.etree.ElementTree as ET
+from io import BytesIO
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import tempfile
+from datetime import datetime
+dist = __import__('math').dist
 
-st.set_page_config(page_title="KMZ → DXF ke Template", layout="wide")
+SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
+SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
+SHEET_NAME = "Pole Pekanbaru"
 
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+_cached_headers = None
+_cached_prev_row = None
 
-target_folders = {
-    'FDT', 'FAT', 'HP COVER', 'NEW POLE 7-3', 'NEW POLE 7-4',
-    'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 7-3',
-    'BOUNDARY', 'DISTRIBUTION CABLE', 'SLING WIRE'
-}
+def authenticate_google():
+    creds_dict = st.secrets["gcp_service_account"]
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(credentials)
+    return client
 
-def extract_kmz(kmz_path, extract_dir):
-    with zipfile.ZipFile(kmz_path, 'r') as kmz_file:
-        kmz_file.extractall(extract_dir)
-    return os.path.join(extract_dir, "doc.kml")
+def extract_points_from_kmz(kmz_path):
+    fat_points, poles = [], []
 
-def parse_kml(kml_path):
-    ns = {'kml': 'http://www.opengis.net/kml/2.2'}
-    with open(kml_path, 'rb') as f:
-        tree = ET.parse(f)
-    root = tree.getroot()
-    folders = root.findall('.//kml:Folder', ns)
-    items = []
-    for folder in folders:
-        folder_name_tag = folder.find('kml:name', ns)
-        if folder_name_tag is None:
-            continue
-        folder_name = folder_name_tag.text.strip().upper()
-        if folder_name not in target_folders:
-            continue
-        placemarks = folder.findall('.//kml:Placemark', ns)
-        for pm in placemarks:
-            name = pm.find('kml:name', ns)
-            name_text = name.text.strip() if name is not None else ""
+    def recurse_folder(folder, ns, path=""):
+        items = []
+        name_el = folder.find("kml:name", ns)
+        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
+        new_path = f"{path}/{folder_name}" if path else folder_name
+        for sub in folder.findall("kml:Folder", ns):
+            items += recurse_folder(sub, ns, new_path)
+        for pm in folder.findall("kml:Placemark", ns):
+            nm = pm.find("kml:name", ns)
+            coord = pm.find(".//kml:coordinates", ns)
+            if nm is not None and coord is not None and ',' in coord.text:
+                lon, lat = coord.text.strip().split(",")[:2]
+                items.append({"name": nm.text.strip(), "lat": float(lat), "lon": float(lon), "path": new_path})
+        return items
 
-            # Point
-            point_coord = pm.find('.//kml:Point/kml:coordinates', ns)
-            if point_coord is not None:
-                lon, lat, *_ = point_coord.text.strip().split(',')
-                items.append({
-                    'type': 'point',
-                    'name': name_text,
-                    'latitude': float(lat),
-                    'longitude': float(lon),
-                    'folder': folder_name
-                })
-                continue
+    with zipfile.ZipFile(kmz_path, 'r') as zf:
+        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
+        if not kml_file:
+            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
+            return [], []
 
-            # LineString
-            line_coord = pm.find('.//kml:LineString/kml:coordinates', ns)
-            if line_coord is not None:
-                coords = []
-                for c in line_coord.text.strip().split():
-                    lon, lat, *_ = c.split(',')
-                    coords.append((float(lat), float(lon)))
-                items.append({
-                    'type': 'path',
-                    'name': name_text,
-                    'coords': coords,
-                    'folder': folder_name
-                })
-                continue
+        root = ET.parse(zf.open(kml_file)).getroot()
+        ns = {"kml": "http://www.opengis.net/kml/2.2"}
+        all_pm = []
+        for folder in root.findall(".//kml:Folder", ns):
+            all_pm += recurse_folder(folder, ns)
 
-            # Polygon
-            poly_coord = pm.find('.//kml:Polygon//kml:coordinates', ns)
-            if poly_coord is not None:
-                coords = []
-                for c in poly_coord.text.strip().split():
-                    lon, lat, *_ = c.split(',')
-                    coords.append((float(lat), float(lon)))
-                items.append({
-                    'type': 'path',
-                    'name': name_text,
-                    'coords': coords,
-                    'folder': folder_name
-                })
-    return items
+    for p in all_pm:
+        base_folder = p["path"].split("/")[0].upper()
+        if base_folder == "FAT":
+            fat_points.append(p)
+        elif base_folder == "NEW POLE 7-3":
+            poles.append(p)
 
-def latlon_to_xy(lat, lon):
-    return transformer.transform(lon, lat)
+    return fat_points, poles
 
-def apply_offset(points_xy):
-    xs = [x for x, y in points_xy]
-    ys = [y for x, y in points_xy]
-    cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
-    return [(x - cx, y - cy) for x, y in points_xy], (cx, cy)
+def find_nearest_pole(fat_point, poles):
+    min_dist = float('inf')
+    nearest_name = ""
+    for pole in poles:
+        d = dist([fat_point['lat'], fat_point['lon']], [pole['lat'], pole['lon']])
+        if d < min_dist:
+            min_dist = d
+            nearest_name = pole['name']
+    return nearest_name
 
-def classify_items(items):
-    classified = {name: [] for name in [
-        "FDT", "FAT", "HP_COVER", "NEW_POLE", "EXISTING_POLE", "POLE",
-        "BOUNDARY", "DISTRIBUTION_CABLE", "SLING_WIRE"
-    ]}
-    for it in items:
-        folder = it['folder']
-        if "FDT" in folder:
-            classified["FDT"].append(it)
-        elif "FAT" in folder and folder != "FAT AREA":
-            classified["FAT"].append(it)
-        elif "HP COVER" in folder:
-            classified["HP_COVER"].append(it)
-        elif "NEW POLE" in folder:
-            classified["NEW_POLE"].append(it)
-        elif "EXISTING" in folder or "EMR" in folder:
-            classified["EXISTING_POLE"].append(it)
-        elif "BOUNDARY" in folder:
-            classified["BOUNDARY"].append(it)
-        elif "DISTRIBUTION CABLE" in folder:
-            classified["DISTRIBUTION_CABLE"].append(it)
-        elif "SLING WIRE" in folder:
-            classified["SLING_WIRE"].append(it)
+def append_fat_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor):
+    headers = sheet.row_values(1)
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
+
+    values = sheet.get_all_values()
+    for i in range(len(values)-1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
+
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map.get('installation_date', 0)].count("/") == 2 else today.strftime("%Y-%m-%d")
+
+    all_rows = []
+    for fat in fat_points:
+        row = [""] * len(headers)
+
+        for col_idx in range(5):  # kolom A-E
+            row[col_idx] = prev_row[col_idx] if col_idx < len(prev_row) else ""
+
+        row[5] = district.upper()       # Kolom F
+        row[6] = subdistrict.upper()   # Kolom G
+        row[7] = fat['name']           # Kolom H
+        row[8] = fat['name']           # Kolom I
+        row[9] = fat['lat']            # Kolom J
+        row[10] = fat['lon']           # Kolom K
+
+        for idx in range(11, 24):      # Kolom L-X
+            row[idx] = prev_row[idx] if idx < len(prev_row) else ""
+
+        row[24] = vendor.upper()       # Kolom Y
+        row[26] = formatted_date       # Kolom AA
+
+        # Kolom AG
+        idx_ag = header_map.get('parentid 1')
+        if idx_ag:
+            row[idx_ag] = find_nearest_pole(fat, poles)
+
+        # Kolom AH-AI
+        for col in ['parent_type 1', 'fat type']:
+            idx = header_map.get(col.lower())
+            if idx:
+                row[idx] = prev_row[idx]
+
+        # Kolom AL
+        idx_al = header_map.get('vendor name')
+        if idx_al:
+            row[idx_al] = vendor.upper()
+
+        all_rows.append(row)
+
+    sheet.append_rows(all_rows)
+    st.success(f"✅ {len(fat_points)} FAT berhasil dikirim ke Spreadsheet ke-2 🛰️")
+
+# === STREAMLIT INTERFACE ===
+st.set_page_config(page_title="Uploader Pole KMZ", layout="centered")
+st.title("📡 Uploader Pole KMZ (CLUSTER + SUBFEEDER + FAT SPLITTER)")
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    district_input = st.text_input("District (E)")
+with col2:
+    subdistrict_input = st.text_input("Subdistrict (F)")
+with col3:
+    vendor_input = st.text_input("Vendor Name (AB)")
+
+uploaded_cluster = st.file_uploader("📤 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE 7-3)", type=["kmz"])
+
+submit_clicked = st.button("🚀 Submit dan Kirim ke Google Sheet")
+
+if submit_clicked:
+    if not district_input or not subdistrict_input or not vendor_input:
+        st.warning("⚠️ Harap isi semua kolom input manual.")
+    elif not uploaded_cluster:
+        st.warning("⚠️ Harap upload file KMZ.")
+    else:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+            tmp.write(uploaded_cluster.read())
+            kmz_path = tmp.name
+
+        with st.spinner("🔍 Membaca data FAT dan Pole dari KMZ..."):
+            fat_points, poles = extract_points_from_kmz(kmz_path)
+
+        if fat_points:
+            try:
+                client = authenticate_google()
+                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
+                append_fat_to_sheet(sheet2, fat_points, poles, district_input, subdistrict_input, vendor_input)
+            except Exception as e:
+                st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
         else:
-            classified["POLE"].append(it)
-    return classified
-
-def draw_to_template(classified, template_path):
-    doc = ezdxf.readfile(template_path)
-    msp = doc.modelspace()
-
-    matchprop_hp = matchprop_pole = matchprop_sr = None
-    for e in msp.query('TEXT'):
-        txt = e.dxf.text.upper()
-        if 'NN-' in txt:
-            matchprop_hp = e.dxf
-        elif 'MR.SRMRW16' in txt:
-            matchprop_pole = e.dxf
-        elif 'SRMRW16.067.B01' in txt:
-            matchprop_sr = e.dxf
-
-    all_xy = []
-    for layer_name, cat_items in classified.items():
-        for obj in cat_items:
-            if obj['type'] == 'point':
-                all_xy.append(latlon_to_xy(obj['latitude'], obj['longitude']))
-            elif obj['type'] == 'path':
-                all_xy.extend([latlon_to_xy(lat, lon) for lat, lon in obj['coords']])
-
-    if not all_xy:
-        st.error("❌ Tidak ada data dari KMZ!")
-        return None
-
-    shifted_all, (cx, cy) = apply_offset(all_xy)
-
-    idx = 0
-    for layer_name, cat_items in classified.items():
-        for obj in cat_items:
-            if obj['type'] == 'point':
-                obj['xy'] = shifted_all[idx]
-                idx += 1
-            elif obj['type'] == 'path':
-                obj['xy_path'] = shifted_all[idx: idx + len(obj['coords'])]
-                idx += len(obj['coords'])
-
-    for layer_name, cat_items in classified.items():
-        for obj in cat_items:
-            if obj['type'] == 'point':
-                x, y = obj['xy']
-
-                if layer_name == "HP_COVER":
-                    matchprop = matchprop_hp
-                elif layer_name in ["NEW_POLE", "EXISTING_POLE"]:
-                    matchprop = matchprop_pole
-                elif layer_name in ["FAT", "FDT"]:
-                    matchprop = matchprop_sr
-                else:
-                    matchprop = None
-
-                # Tambah lingkaran (kecuali HP_COVER)
-                if layer_name != "HP_COVER":
-                    msp.add_circle(
-                        center=(x, y),
-                        radius=2,
-                        dxfattribs={"layer": layer_name}
-                    )
-
-                # Tambah teks
-                attribs = {
-                    "height": getattr(matchprop, "height", 1.5) if matchprop else 1.5,
-                    "layer": layer_name,
-                    "color": getattr(matchprop, "color", 256) if matchprop else 256,
-                    "insert": (x + 2, y)
-                }
-                msp.add_text(obj["name"], dxfattribs=attribs)
-
-            elif obj['type'] == 'path':
-                msp.add_lwpolyline(obj['xy_path'], dxfattribs={"layer": layer_name})
-
-    return doc
-
-st.title("🏗️ KMZ → DXF (Masuk ke Template)")
-
-uploaded_kmz = st.file_uploader("📂 Upload File KMZ", type=["kmz"])
-uploaded_template = st.file_uploader("📐 Upload Template DXF", type=["dxf"])
-
-if uploaded_kmz and uploaded_template:
-    extract_dir = "temp_kmz"
-    os.makedirs(extract_dir, exist_ok=True)
-    output_dxf = "converted_output.dxf"
-
-    with open("template_ref.dxf", "wb") as f:
-        f.write(uploaded_template.read())
-
-    with st.spinner("🔍 Memproses data..."):
-        kml_path = extract_kmz(uploaded_kmz, extract_dir)
-        items = parse_kml(kml_path)
-        classified = classify_items(items)
-        updated_doc = draw_to_template(classified, "template_ref.dxf")
-        if updated_doc:
-            updated_doc.saveas(output_dxf)
-
-    if os.path.exists(output_dxf):
-        st.success("✅ Konversi berhasil! DXF sudah dibuat berdasarkan template.")
-        with open(output_dxf, "rb") as f:
-            st.download_button("⬇️ Download DXF", f, file_name="output_from_kmz.dxf")
+            st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
