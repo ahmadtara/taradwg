@@ -1,7 +1,6 @@
 streamlit
-ezdxf
-pyproj
-requests
-lxml
+gspread
+oauth2client
 fastkml
 shapely
+pandas
