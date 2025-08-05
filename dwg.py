@@ -31,6 +31,10 @@ with col3:
 uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
 uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 
+col4, col5, col6 = st.columns(3)
+with col4:
+    kml_folder = st.selectbox("📂 Upload KML ke Folder Drive", ["", "DISTRIBUTION CABLE", "BOUNDARY CLUSTER", "CABLE"])
+
 submit_clicked = st.button("🚀 Submit dan Kirim ke Google Sheet")
 
 st.write("---")
@@ -51,5 +55,44 @@ GDRIVE_FOLDERS = {
 
 _cached_headers = None
 _cached_prev_row = None
+
+def upload_kml_to_drive(kmz_path, folder_name):
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=['https://www.googleapis.com/auth/drive']
+    )
+    drive_service = build('drive', 'v3', credentials=creds)
+
+    with zipfile.ZipFile(kmz_path, 'r') as zf:
+        kml_filename = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
+        if not kml_filename:
+            st.warning("⚠️ File .kml tidak ditemukan dalam KMZ.")
+            return
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".kml") as tmp_kml:
+            tmp_kml.write(zf.read(kml_filename))
+            tmp_kml_path = tmp_kml.name
+
+    new_filename = os.path.splitext(os.path.basename(kmz_path))[0] + ".kml"
+    file_metadata = {
+        'name': new_filename,
+        'parents': [GDRIVE_FOLDERS[folder_name]]
+    }
+    media = MediaFileUpload(tmp_kml_path, mimetype='application/vnd.google-earth.kml+xml')
+
+    drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id'
+    ).execute()
+
+    st.success(f"📄 File {new_filename} berhasil diupload ke Google Drive (folder: {folder_name})")
+
+if submit_clicked:
+    if kml_folder and uploaded_cluster:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+            tmp.write(uploaded_cluster.read())
+            kmz_path = tmp.name
+        upload_kml_to_drive(kmz_path, kml_folder)
 
 # ... (fungsi lainnya tetap tidak berubah sampai bawah)
