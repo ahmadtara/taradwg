@@ -17,9 +17,9 @@ except ModuleNotFoundError as e:
     st.stop()
 
 st.set_page_config(page_title="Uploader FAT Splitter", layout="centered")
-
 st.title("📡 Uploader FAT Splitter")
 
+# Input pengguna
 col1, col2, col3 = st.columns(3)
 with col1:
     district_input = st.text_input("District (E)")
@@ -28,6 +28,7 @@ with col2:
 with col3:
     vendor_input = st.text_input("Vendor Name (AB)")
 
+# Upload KMZ
 uploaded_cluster = st.file_uploader("📄 Upload file .KMZ CLUSTER (berisi FAT & NEW POLE)", type=["kmz"])
 uploaded_subfeeder = st.file_uploader("📄 Upload file .KMZ SUBFEEDER (berisi NEW POLE 7-4 / 9-4)", type=["kmz"])
 
@@ -36,12 +37,9 @@ submit_clicked = st.button("🚀 Submit dan Kirim ke Google Sheet")
 st.write("---")
 st.write("✅ Aplikasi dimulai...")
 
-dist = __import__('math').dist
-
+# Spreadsheet & Drive Config
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
-SHEET_NAME = "Pole Pekanbaru"
-SHEET_NAME_2 = "FAT Pekanbaru"
 
 GDRIVE_FOLDERS = {
     "DISTRIBUTION CABLE": "1XkWqvRX4SUYMrtMQ7vt8197oSja4r9p-",
@@ -49,10 +47,8 @@ GDRIVE_FOLDERS = {
     "CABLE": "16aesqK-OIqYIDAIn_ymLzf1-VkLyXonl"
 }
 
-_cached_headers = None
-_cached_prev_row = None
-
-def upload_kml_to_drive(kmz_path):
+# Upload file KML ke Google Drive
+def upload_kml_to_drive(kmz_path, target_folders):
     creds = service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=['https://www.googleapis.com/auth/drive']
@@ -71,26 +67,34 @@ def upload_kml_to_drive(kmz_path):
 
     new_filename = os.path.splitext(os.path.basename(kmz_path))[0] + ".kml"
 
-    for folder_name, folder_id in GDRIVE_FOLDERS.items():
-        file_metadata = {
-            'name': new_filename,
-            'parents': [folder_id]
-        }
-        media = MediaFileUpload(tmp_kml_path, mimetype='application/vnd.google-earth.kml+xml')
+    for folder_name in target_folders:
+        folder_id = GDRIVE_FOLDERS.get(folder_name)
+        if folder_id:
+            file_metadata = {
+                'name': new_filename,
+                'parents': [folder_id]
+            }
+            media = MediaFileUpload(tmp_kml_path, mimetype='application/vnd.google-earth.kml+xml')
+            drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
 
-        drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id'
-        ).execute()
+    st.success(f"📄 File {new_filename} berhasil diupload ke folder: {', '.join(target_folders)}")
 
-    st.success(f"📄 File {new_filename} berhasil diupload ke semua folder Google Drive.")
-
+# Eksekusi jika tombol diklik
 if submit_clicked:
     if uploaded_cluster:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
             tmp.write(uploaded_cluster.read())
             kmz_path = tmp.name
-        upload_kml_to_drive(kmz_path)
+        upload_kml_to_drive(kmz_path, ["DISTRIBUTION CABLE", "BOUNDARY CLUSTER"])
 
-# ... (fungsi lainnya tetap tidak berubah sampai bawah)
+    if uploaded_subfeeder:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+            tmp.write(uploaded_subfeeder.read())
+            kmz_path = tmp.name
+        upload_kml_to_drive(kmz_path, ["CABLE"])
+
+# (Fungsi parsing dan sheet writing lainnya menyusul di utils)
