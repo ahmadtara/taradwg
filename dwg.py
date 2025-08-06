@@ -83,6 +83,7 @@ def extract_data_from_kmz(kmz_file):
         st.success("✅ Titik tiang dari folder 'NEW POLE' berhasil ditemukan dalam KMZ.")
 
     return folders
+    
 def extract_points_from_kmz(kmz_path):
     fat_points, poles, poles_subfeeder = [], [], []
 
@@ -210,9 +211,9 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[33] = datetime.today().strftime("%d/%m/%Y")
         row[31] = vendor
         row[44] = vendor
-        idx_ag = header_map.get('parentid 1')
-        if idx_ag is not None:
-            row[idx_ag] = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m4inch'])
+        idx_an = header_map.get('parentid 1')
+        if idx_an is not None:
+            row[idx_an] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
         
         rows.append(row)
 
@@ -314,5 +315,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
