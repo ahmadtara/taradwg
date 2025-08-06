@@ -1,8 +1,3 @@
-# ✅ Kode lengkap akan dibuat berdasarkan struktur sebelumnya
-# ✅ Fokus pada 3 spreadsheet: FDT, DISTRIBUTION CABLE, dan CABLE dari SUBFEEDER
-# ✅ Penamaan variabel mengikuti konsistensi dan kemudahan traceability
-# ✅ Gunakan fungsi modular agar mudah debugging dan pemeliharaan
-
 import streamlit as st
 import zipfile
 import xml.etree.ElementTree as ET
@@ -247,6 +242,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
