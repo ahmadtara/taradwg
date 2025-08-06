@@ -132,9 +132,13 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-    
+        
         rows.append(row)
-
+    # Ini bagian dari fungsi append_fat_to_sheet
+    idx_ag = header_map.get('parentid 1')
+    if idx_ag is not None:
+    row[idx_ag] = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m3inch'])
+        
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
     return len(rows)
 
@@ -230,6 +234,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
