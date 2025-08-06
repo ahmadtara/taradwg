@@ -85,25 +85,6 @@ def templatecode_to_kolom_ap(templatecode):
     }
     return mapping.get(templatecode.strip().upper(), "")
 
-def find_nearest_pole(fdt_point, poles):
-    min_dist = float('inf')
-    nearest_name = ""
-    for pole in poles:
-        d = dist([fdt_point['lat'], fdt_point['lon']], [pole['lat'], pole['lon']])
-        if d < min_dist:
-            min_dist = d
-            nearest_name = pole['name']
-    return nearest_name
-    
-    # Filter hanya poles dengan lat/lon yang bisa diubah ke float
-    valid_poles = [p for p in poles if is_float(p['lat']) and is_float(p['lon'])]
-    
-    if not valid_poles:
-        return ''  # tidak ada pole valid
-    
-    closest = min(valid_poles, key=lambda p: dist([fdt_lat, fdt_lon], [float(p['lat']), float(p['lon'])]))
-    return closest['name']
-
 def is_float(value):
     try:
         float(value)
@@ -111,13 +92,19 @@ def is_float(value):
     except (TypeError, ValueError):
         return False
 
+def find_nearest_pole(fdt_point, poles):
+    valid_poles = [p for p in poles if is_float(p['lat']) and is_float(p['lon'])]
+    if not valid_poles:
+        return ''
+    closest = min(valid_poles, key=lambda p: dist([float(fdt_point['lat']), float(fdt_point['lon'])], [float(p['lat']), float(p['lon'])]))
+    return closest['name']
+
 def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
     header_map = {header.lower(): idx for idx, header in enumerate(existing_rows[0])}
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
 
-    # Cek posisi kolom parentid 1 di awal
     idx_parentid = header_map.get('parentid 1')
     if idx_parentid is None:
         st.error("Kolom 'Parentid 1' tidak ditemukan di header spreadsheet.")
@@ -134,37 +121,35 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         kolom_ap = templatecode_to_kolom_ap(template_row[0])
 
         row = [""] * len(existing_rows[0])
-        row[0] = desc                         # A (Templatecode)
-        row[1:5] = template_row[1:5]          # B-E
-        row[5] = district                     # F
-        row[6] = subdistrict                  # G
-        row[7] = kmz_name                     # H
-        row[8] = name                         # I
-        row[9] = name                         # J
-        row[10] = lat                         # K
-        row[11] = lon                         # L
-        row[12] = kolom_m                     # M
-        row[13:16] = template_row[13:16]      # N-P
-        row[17] = kolom_r                     # R
-        row[18] = template_row[18]            # S
-        row[24:26] = template_row[24:26]      # Y-AA
-        row[26] = template_row[26]            # AB
-        row[29] = template_row[29]            # AD
-        row[30] = template_row[30]            # AE
-        row[40] = template_row[40]            # AO
-        row[41] = kolom_ap                    # AP
-        row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
-        row[31] = vendor                      # AF
-        row[44] = vendor                      # AS
+        row[0] = desc
+        row[1:5] = template_row[1:5]
+        row[5] = district
+        row[6] = subdistrict
+        row[7] = kmz_name
+        row[8] = name
+        row[9] = name
+        row[10] = lat
+        row[11] = lon
+        row[12] = kolom_m
+        row[13:16] = template_row[13:16]
+        row[17] = kolom_r
+        row[18] = template_row[18]
+        row[24:26] = template_row[24:26]
+        row[26] = template_row[26]
+        row[29] = template_row[29]
+        row[30] = template_row[30]
+        row[40] = template_row[40]
+        row[41] = kolom_ap
+        row[33] = datetime.today().strftime("%d/%m/%Y")
+        row[31] = vendor
+        row[44] = vendor
 
-        # Isi Parentid 1 berdasarkan pole terdekat dari folder "NEW POLE 7-4"
-        row[idx_parentid] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
+        row[idx_parentid] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == 'NEW POLE 7-4'])
 
         rows.append(row)
 
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
     return len(rows)
-
 
 def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     rows = []
@@ -202,8 +187,6 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
     return len(rows)
 
-# 🔽 MAIN STREAMLIT UI
-
 def main():
     st.title("📌 KMZ to Google Sheets - Auto Mapper")
 
@@ -230,9 +213,14 @@ def main():
             if client is None:
                 client = authenticate_google()
 
+            poles_7_4 = folders.get("NEW POLE 7-4", [])
+            if poles_7_4:
+                st.success(f"✅ {len(poles_7_4)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
+            else:
+                st.warning("⚠️ Tidak ditemukan titik tiang di folder 'NEW POLE 7-4' dalam KMZ.")
+
             if 'FDT' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                poles_7_4 = folders.get("NEW POLE 7-4", [])
                 count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles_7_4, district, subdistrict, vendor, kmz_name)
 
             if 'DISTRIBUTION CABLE' in folders:
@@ -258,22 +246,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
