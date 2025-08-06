@@ -76,12 +76,7 @@ def extract_data_from_kmz(kmz_file):
                 folders[folder_name].extend(placemarks)
                 if folder_name.upper().startswith("NEW POLE") and placemarks:
                     new_pole_found = True
-
-    if not new_pole_found:
-        st.warning("⚠️ Tidak ditemukan titik tiang di folder yang diawali dengan 'NEW POLE' dalam KMZ.")
-    else:
-        st.success("✅ Titik tiang dari folder 'NEW POLE' berhasil ditemukan dalam KMZ.")
-
+                    
     return folders
     
 def extract_points_from_kmz(kmz_path):
@@ -118,10 +113,18 @@ def extract_points_from_kmz(kmz_path):
         base_folder = p["path"].split("/")[0].upper()
         if base_folder == "FDT":
             fdt_points.append(p)
+        elif base_folder == "NEW POLE 7-3":
+            poles.append({**p, "folder": "7m3inch", "height": "7"})
         elif base_folder == "NEW POLE 7-4":
             poles.append({**p, "folder": "7m4inch", "height": "7"})
         elif base_folder == "NEW POLE 9-4":
             poles.append({**p, "folder": "9m4inch", "height": "9"})
+         elif base_folder == "EXISTING POLE EMR 7-4":
+            poles.append({**p, "folder": "ext7m4inch", "height": "7"})
+         elif base_folder == "EXISTING POLE EMR 7-3":
+            poles.append({**p, "folder": "ext7m3inch", "height": "7"})
+         elif base_folder == "EXISTING POLE EMR 9-4":
+            poles.append({**p, "folder": "ext9m4inch", "height": "9"})
 
     return fat_points, poles, poles_subfeeder
 
@@ -209,7 +212,9 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[44] = vendor
         idx_an = header_map.get('parentid 1')
         if idx_an is not None:
-            row[idx_an] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
+            row[idx_an] = find_nearest_pole(fdt, [
+                p for p in poles if p['folder'] in ['7m4inch', '7m3inch', 'ext7m3inch', 'ext7m4inch', 'ext9m4inch']
+            ])
         
         rows.append(row)
 
@@ -311,6 +316,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
