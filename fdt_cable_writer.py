@@ -3,13 +3,13 @@
 import zipfile
 import xml.etree.ElementTree as ET
 from math import radians, cos, sin, sqrt, atan2
-from sheet_utils import get_latest_row_data, parse_date_format, extract_distance
+from datetime import datetime
+import streamlit as st
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import re
 
 def authenticate_google():
-    import streamlit as st
-    import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-
     creds_dict = st.secrets["gcp_service_account"]
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
@@ -50,8 +50,7 @@ def extract_points_from_kmz(kmz_path):
                     continue
 
                 name = name_el.text.strip()
-                description = desc_el.text if desc_el is not None and desc_el.text else ""
-                description = ET.fromstring(f"<root>{description}</root>").text if "<" not in description else ET.fromstring(f"<root>{description}</root>").itertext().__next__()
+                description = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
                 coords = coord_el.text.strip().split(",")
                 lon, lat = float(coords[0]), float(coords[1])
 
@@ -59,7 +58,7 @@ def extract_points_from_kmz(kmz_path):
                     "name": name,
                     "lat": lat,
                     "lon": lon,
-                    "description": description.strip()
+                    "description": description
                 }
 
                 if folder_name == "FDT":
@@ -111,3 +110,13 @@ def extract_paths_from_kmz(kmz_path, folder_match="DISTRIBUTION CABLE"):
                 })
 
     return path_items
+
+def find_nearest_pole(fdt_point, poles):
+    min_dist = float('inf')
+    nearest = None
+    for pole in poles:
+        dist = haversine_distance(fdt_point['lat'], fdt_point['lon'], pole['lat'], pole['lon'])
+        if dist < min_dist:
+            min_dist = dist
+            nearest = pole['name']
+    return nearest
