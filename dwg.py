@@ -53,13 +53,16 @@ def extract_data_from_kmz(kmz_file):
                 'full_path': full_folder_path
             })
 
+        # Proses subfolder
         for subfolder in folder_element.findall("kml:Folder", ns):
             placemarks.extend(parse_folder(subfolder, ns, full_folder_path))
 
         return placemarks
 
     folders = {}
+    poles_7_4 = []
     new_pole_found = False
+
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = [f for f in z.namelist() if f.endswith('.kml')][0]
         with z.open(kml_filename) as kml_file:
@@ -67,22 +70,24 @@ def extract_data_from_kmz(kmz_file):
             root = tree.getroot()
 
             ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
             for folder in root.findall(".//kml:Folder", ns):
-                folder_name_el = folder.find("kml:name", ns)
-                folder_name = folder_name_el.text.strip() if folder_name_el is not None else "Unknown"
                 placemarks = parse_folder(folder, ns)
-                if folder_name not in folders:
-                    folders[folder_name] = []
-                folders[folder_name].extend(placemarks)
-                if folder_name.upper().startswith("NEW POLE") and placemarks:
-                    new_pole_found = True
+                for pm in placemarks:
+                    folder_key = pm['folder']
+                    folders.setdefault(folder_key, []).append(pm)
+
+                    if 'NEW POLE' in folder_key.upper():
+                        new_pole_found = True
+                    if 'NEW POLE 7-4' in folder_key.upper():
+                        poles_7_4.append(pm)
 
     if not new_pole_found:
         st.warning("⚠️ Tidak ditemukan titik tiang di folder yang diawali dengan 'NEW POLE' dalam KMZ.")
     else:
         st.success("✅ Titik tiang dari folder 'NEW POLE' berhasil ditemukan dalam KMZ.")
 
-    return folders
+    return folders, poles_7_4
 
 def templatecode_to_kolom_m(templatecode):
     mapping = {
@@ -231,7 +236,7 @@ def main():
 
     if kmz_fdt_file and district and subdistrict and vendor:
         with st.spinner("🔍 Memproses KMZ FDT..."):
-            folders = extract_data_from_kmz(kmz_fdt_file)
+            folders, poles_7_4 = extract_data_from_kmz(kmz_fdt_file)
             kmz_name = kmz_fdt_file.name.replace(".kmz", "")
             if client is None:
                 client = authenticate_google()
@@ -269,5 +274,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
