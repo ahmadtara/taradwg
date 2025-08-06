@@ -1,163 +1,168 @@
-# sheet_writer.py
-import gspread
 from datetime import datetime
-from oauth2client.service_account import ServiceAccountCredentials
+from math import dist
 
-def authenticate_google(creds_dict):
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(credentials)
-    return client
+def fill_fdt_pekanbaru(sheet, fdt_points, poles_74, district, subdistrict, vendor, kmz_filename):
+    headers = sheet.row_values(1)
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
 
-def get_latest_row(sheet):
     values = sheet.get_all_values()
     for i in range(len(values) - 1, 0, -1):
         if any(values[i]):
-            return values[i]
-    return [""] * len(sheet.row_values(1))
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
 
-def get_date_format(ref_value):
-    if ref_value.count("/") == 2:
-        return "%d/%m/%Y"
-    return "%Y-%m-%d"
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if "/" in prev_row[header_map.get('ah', 0)] else today.strftime("%Y-%m-%d")
 
-def fill_fdt_pekanbaru(sheet, fdt_points, poles_74, district, subdistrict, vendor, kmz_name):
-    headers = sheet.row_values(1)
-    header_map = {name.strip().lower(): idx for idx, name in enumerate(headers)}
-    prev_row = get_latest_row(sheet)
-    date_fmt = get_date_format(prev_row[header_map.get('installationdate', 0)])
-    today = datetime.today().strftime(date_fmt)
+    def parse_fdt_type(name):
+        if "FDT 48" in name.upper():
+            return ("2", "4", "FDT TYPE 48 CORE")
+        elif "FDT 72" in name.upper():
+            return ("3", "6", "FDT TYPE 72 CORE")
+        elif "FDT 96" in name.upper():
+            return ("4", "8", "FDT TYPE 96 CORE")
+        return ("", "", "")
 
-    result_rows = []
-    for fdt in fdt_points:
+    def find_nearest_pole(pt):
+        min_d, nearest_name = float('inf'), ""
+        for pole in poles_74:
+            d = dist([pt['lat'], pt['lon']], [pole['lat'], pole['lon']])
+            if d < min_d:
+                min_d, nearest_name = d, pole['name']
+        return nearest_name
+
+    rows = []
+    for pt in fdt_points:
         row = [""] * len(headers)
+        row[1:5] = prev_row[1:5]  # B-E
+        row[5] = district.upper()  # F
+        row[6] = subdistrict.upper()  # G
+        row[7] = kmz_filename  # H
+        row[8] = pt['name']  # I
+        row[9] = pt['name']  # J
+        row[10] = pt['lat']  # K
+        row[11] = pt['lon']  # L
 
-        # Duplicate columns B-E, N-O, Y, Z, AA, AB, AD, AE, S
-        for col in ['b','c','d','e','n','o','y','z','aa','ab','ad','ae','s']:
-            idx = header_map.get(col.lower())
+        row[12:14] = prev_row[12:14]  # M-N
+        row[13:15] = prev_row[13:15]  # N-O
+        row[24:28] = prev_row[24:28]  # Y-Z-AA-AB
+        row[30:32] = prev_row[30:32]  # AD-AE
+        row[18] = prev_row[18]  # S
+
+        row[33] = formatted_date  # AH
+        row[31] = vendor.upper()  # AF
+        row[44] = vendor.upper()  # AS
+
+        row[39] = find_nearest_pole(pt)  # AN
+
+        m, r, ap = parse_fdt_type(pt['name'])
+        row[12] = m  # M
+        row[17] = r  # R
+        row[41] = ap  # AP
+
+        if 'templatecode' in pt:
+            row[header_map.get("templatecode")] = pt['templatecode']
+
+        rows.append(row)
+
+    sheet.append_rows(rows)
+    return len(rows)
+
+def fill_cable_pekanbaru(sheet, cable_paths, vendor, kmz_filename):
+    headers = sheet.row_values(1)
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
+    values = sheet.get_all_values()
+    for i in range(len(values) - 1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
+
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if "/" in prev_row[header_map.get('y', 0)] else today.strftime("%Y-%m-%d")
+
+    def parse_fo(text):
+        if "FO 24/2T" in text.upper(): return "2"
+        if "FO 48/4T" in text.upper(): return "4"
+        if "FO 36/3T" in text.upper(): return "3"
+        return ""
+
+    def parse_ae(text):
+        import re
+        match = re.search(r"AE\s*-?\s*(\d+)\s*M", text.upper())
+        return match.group(1) if match else ""
+
+    rows = []
+    for path in cable_paths:
+        row = [""] * len(headers)
+        row[0] = path['name']
+        row[1] = path['name']
+        for i in ['c', 'd', 'e', 'f', 'k', 'u', 'v']:
+            idx = header_map.get(i)
             if idx is not None:
                 row[idx] = prev_row[idx]
 
-        # Static / mapped columns
-        row[header_map['i']] = fdt['name']
-        row[header_map['j']] = fdt['name']
-        row[header_map['k']] = fdt['lat']
-        row[header_map['l']] = fdt['lon']
-        row[header_map['f']] = district.upper()
-        row[header_map['g']] = subdistrict.upper()
-        row[header_map['af']] = vendor.upper()
-        row[header_map['as']] = vendor.upper()
-        row[header_map['ah']] = today
-        row[header_map['h']] = kmz_name
+        row[9] = parse_fo(path['name'])  # J
+        row[16] = str(round(path['length'], 2))  # P
+        row[17] = parse_ae(path['name'])  # Q
+        row[24] = formatted_date  # Y
+        row[26] = vendor  # AM
+        row[22] = kmz_filename  # AK
 
-        # Parent ID 1 from nearest pole
-        if 'parentid 1' in header_map:
-            row[header_map['parentid 1']] = find_nearest_pole(fdt, poles_74)
+        rows.append(row)
 
-        # Templatecode
-        if 'templatecode' in header_map:
-            row[header_map['templatecode']] = fdt['desc']
+    sheet.append_rows(rows)
+    return len(rows)
 
-        # Kolom M, R, AP dari nama FDT
-        a_value = fdt['name'].upper()
-        if 'fdt 48' in a_value:
-            row[header_map.get('m')] = '2'
-            row[header_map.get('r')] = '4'
-            row[header_map.get('ap')] = 'FDT TYPE 48 CORE'
-        elif 'fdt 72' in a_value:
-            row[header_map.get('m')] = '3'
-            row[header_map.get('r')] = '6'
-            row[header_map.get('ap')] = 'FDT TYPE 72 CORE'
-        elif 'fdt 96' in a_value:
-            row[header_map.get('m')] = '4'
-            row[header_map.get('r')] = '8'
-            row[header_map.get('ap')] = 'FDT TYPE 96 CORE'
-
-        result_rows.append(row)
-
-    sheet.append_rows(result_rows)
-    return len(result_rows)
-
-def fill_cable_pekanbaru(sheet, path_data, vendor, kmz_name):
+def fill_subfeeder_pekanbaru(sheet, sub_paths, vendor, kmz_filename):
     headers = sheet.row_values(1)
-    header_map = {name.strip().lower(): idx for idx, name in enumerate(headers)}
-    prev_row = get_latest_row(sheet)
-    date_fmt = get_date_format(prev_row[header_map.get('y', 0)])
-    today = datetime.today().strftime(date_fmt)
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
+    values = sheet.get_all_values()
+    for i in range(len(values) - 1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
 
-    result_rows = []
-    for path in path_data:
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if "/" in prev_row[header_map.get('y', 0)] else today.strftime("%Y-%m-%d")
+
+    def parse_jm(text):
+        if "FO 24/2T" in text.upper(): return ("2", "24")
+        if "FO 48/4T" in text.upper(): return ("4", "48")
+        if "FO 12/2T" in text.upper(): return ("12", "12")
+        if "FO 96/9T" in text.upper(): return ("", "96")
+        return ("", "")
+
+    def parse_ae(text):
+        import re
+        match = re.search(r"AE\s*-?\s*(\d+)\s*M", text.upper())
+        return match.group(1) if match else ""
+
+    rows = []
+    for path in sub_paths:
         row = [""] * len(headers)
-
-        row[header_map.get('a')] = path['name']
-        row[header_map.get('b')] = path['name']
-
-        for col in ['c','d','e','f','k','u','v']:
-            idx = header_map.get(col.lower())
+        row[0] = path['name']
+        row[1] = path['name']
+        for col in ['c', 'd', 'e', 'f', 'k', 'l', 'u', 'v', 'aj']:
+            idx = header_map.get(col)
             if idx is not None:
                 row[idx] = prev_row[idx]
 
-        row[header_map.get('am')] = vendor.upper()
-        row[header_map.get('ak')] = kmz_name
-        row[header_map.get('y')] = today
+        j, m = parse_jm(path['name'])
+        row[9] = j  # J
+        row[12] = m  # M
+        row[16] = str(round(path['length'], 2))  # P
+        row[17] = parse_ae(path['name'])  # Q
+        row[24] = formatted_date  # Y
+        row[26] = vendor  # AM
+        row[22] = kmz_filename  # AK
 
-        # FO Capacity (J)
-        ports, _ = parse_fo_capacity(path['name'])
-        if ports and 'j' in header_map:
-            row[header_map['j']] = str(ports)
+        rows.append(row)
 
-        # AE Distance (Q)
-        dist = parse_distance(path['name'])
-        if dist and 'q' in header_map:
-            row[header_map['q']] = str(dist)
-
-        # Path length (P)
-        if 'p' in header_map:
-            row[header_map['p']] = str(measure_path_length(path['coords']))
-
-        result_rows.append(row)
-
-    sheet.append_rows(result_rows)
-    return len(result_rows)
-
-def fill_subfeeder_pekanbaru(sheet, path_data, vendor, kmz_name):
-    headers = sheet.row_values(1)
-    header_map = {name.strip().lower(): idx for idx, name in enumerate(headers)}
-    prev_row = get_latest_row(sheet)
-    date_fmt = get_date_format(prev_row[header_map.get('y', 0)])
-    today = datetime.today().strftime(date_fmt)
-
-    result_rows = []
-    for path in path_data:
-        row = [""] * len(headers)
-
-        row[header_map.get('a')] = path['name']
-        row[header_map.get('b')] = path['name']
-
-        for col in ['c','d','e','f','k','l','u','v','aj']:
-            idx = header_map.get(col.lower())
-            if idx is not None:
-                row[idx] = prev_row[idx]
-
-        row[header_map.get('am')] = vendor.upper()
-        row[header_map.get('ak')] = kmz_name
-        row[header_map.get('y')] = today
-
-        # FO Capacity
-        ports, cores = parse_fo_capacity(path['name'])
-        if ports and 'j' in header_map:
-            row[header_map['j']] = str(ports)
-        if cores and 'm' in header_map:
-            row[header_map['m']] = str(cores)
-
-        dist = parse_distance(path['name'])
-        if dist and 'q' in header_map:
-            row[header_map['q']] = str(dist)
-
-        if 'p' in header_map:
-            row[header_map['p']] = str(measure_path_length(path['coords']))
-
-        result_rows.append(row)
-
-    sheet.append_rows(result_rows)
-    return len(result_rows)
+    sheet.append_rows(rows)
+    return len(rows)
