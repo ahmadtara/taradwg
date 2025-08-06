@@ -1,51 +1,62 @@
-# subcable_writer.py
-from fdt_cable_writer import parse_fo_capacity, parse_distance, measure_path_length
+import re
+from datetime import datetime
+from sheet_utils import get_latest_row_data, parse_date_format, extract_distance
 
-def process_cable_data(path_data, prev_row, header_map, vendor, kmz_name, is_subfeeder=False):
-    from datetime import datetime
-    date_fmt = "%d/%m/%Y" if '/' in prev_row[header_map.get('y', 0)] else "%Y-%m-%d"
+def fill_subfeeder_pekanbaru(sheet, paths, vendor_name, kmz_filename):
+    headers = sheet.row_values(1)
+    header_map = {h.strip().lower(): i for i, h in enumerate(headers)}
+
+    prev_row = get_latest_row_data(sheet)
+    date_fmt = parse_date_format(prev_row[header_map['installationdate']])
     today = datetime.today().strftime(date_fmt)
 
-    result_rows = []
-    for path in path_data:
-        row = [""] * len(header_map)
+    all_rows = []
+    for path in paths:
+        row = [""] * len(headers)
 
-        name = path['name']
-        row[header_map.get('a')] = name
-        row[header_map.get('b')] = name
+        # A-B: titik nama
+        row[0] = path['start_name']
+        row[1] = path['end_name']
 
-        if is_subfeeder:
-            cols = ['c','d','e','f','k','l','u','v','aj']
-        else:
-            cols = ['c','d','e','f','k','u','v']
-
-        for col in cols:
+        # C-F, K, L, U, V, AJ: copy dari baris sebelumnya
+        for col in ['c', 'd', 'e', 'f', 'k', 'l', 'u', 'v', 'aj']:
             idx = header_map.get(col.lower())
             if idx is not None:
                 row[idx] = prev_row[idx]
 
-        if 'am' in header_map:
-            row[header_map['am']] = vendor.upper()
-        if 'ak' in header_map:
-            row[header_map['ak']] = kmz_name
-        if 'y' in header_map:
-            row[header_map['y']] = today
+        # AM: Vendor Name input
+        idx_am = header_map.get('am')
+        if idx_am is not None:
+            row[idx_am] = vendor_name.upper()
 
-        ports, cores = parse_fo_capacity(name)
-        if ports:
-            if 'j' in header_map:
-                row[header_map['j']] = str(ports)
-        if cores:
-            if is_subfeeder and 'm' in header_map:
-                row[header_map['m']] = str(cores)
+        # AK: nama file kmz
+        idx_ak = header_map.get('ak')
+        if idx_ak is not None:
+            row[idx_ak] = kmz_filename
 
-        dist = parse_distance(name)
-        if dist and 'q' in header_map:
-            row[header_map['q']] = str(dist)
+        # Y: tanggal hari ini
+        idx_y = header_map.get('y')
+        if idx_y is not None:
+            row[idx_y] = today
 
-        if 'p' in header_map and 'coords' in path:
-            row[header_map['p']] = str(measure_path_length(path['coords']))
+        # J, M: parsing FO xx/xT
+        match = re.search(r'fo\s*(\d+)\s*/\s*(\d+)', path['start_name'].lower())
+        if match:
+            core = int(match.group(1))
+            split = int(match.group(2))
+            row[header_map['j']] = str(split) if 'j' in header_map else ""
+            row[header_map['m']] = str(core) if 'm' in header_map else ""
 
-        result_rows.append(row)
+        # Q: panjang dari AE xxx M
+        ae_match = re.search(r'ae[-\s]*(\d+)\s*m', path['start_name'].lower())
+        if ae_match:
+            row[header_map['q']] = ae_match.group(1)
 
-    return result_rows
+        # P: panjang path (meter)
+        if 'p' in header_map:
+            row[header_map['p']] = round(path.get('length_m', 0), 2)
+
+        all_rows.append(row)
+
+    sheet.append_rows(all_rows)
+    return len(all_rows)
