@@ -1,114 +1,129 @@
-import re
 from datetime import datetime
+import re
 from math import dist
 
+def duplicate_columns(row, prev_row, indices):
+    for idx in indices:
+        if idx < len(row) and idx < len(prev_row):
+            row[idx] = prev_row[idx]
+    return row
 
-def extract_value(text, pattern, default=None, as_int=False):
-    match = re.search(pattern, text)
-    if match:
-        val = match.group(1)
-        return int(val) if as_int else val
-    return default
-
-
-def find_nearest_pole(source, poles):
-    return min(poles, key=lambda p: dist([source['lat'], source['lon']], [p['lat'], p['lon']]), default={}).get('name', '')
-
-
-def append_to_fdt_sheet(sheet, fdt_points, poles, kmz_filename, district, subdistrict, vendor):
-    headers = sheet.row_values(1)
-    header_map = {h.strip().lower(): i for i, h in enumerate(headers)}
-    prev_row = next((r for r in reversed(sheet.get_all_values()) if any(r)), [""] * len(headers))
+def format_date(prev_date):
     today = datetime.today()
-    formatted_date = today.strftime("%d/%m/%Y") if '/' in prev_row[header_map['ah']] else today.strftime("%Y-%m-%d")
+    return today.strftime("%d/%m/%Y") if "/" in prev_date else today.strftime("%Y-%m-%d")
 
-    rows = []
+def parse_fdt_capacity(name):
+    if "FDT 48" in name:
+        return 48, 2, 4, "FDT TYPE 48 CORE"
+    elif "FDT 72" in name:
+        return 72, 3, 6, "FDT TYPE 72 CORE"
+    elif "FDT 96" in name:
+        return 96, 4, 8, "FDT TYPE 96 CORE"
+    return 0, "", "", ""
+
+def parse_cable_j(name):
+    if "FO 24/2T" in name:
+        return 2
+    elif "FO 36/3T" in name:
+        return 3
+    elif "FO 48/4T" in name:
+        return 4
+    elif "FO 12/2T" in name:
+        return 12
+    elif "FO 96/9T" in name:
+        return 96
+    return ""
+
+def parse_distance_q(text):
+    match = re.search(r'AE[-\s]*([\d]+)\s*M', text)
+    return match.group(1) if match else ""
+
+def append_to_fdt_sheet(sheet, fdt_points, poles_74, kmz_name, district, subdistrict, vendor):
+    headers = sheet.row_values(1)
+    values = sheet.get_all_values()
+    prev_row = next((row for row in reversed(values) if any(row)), [""] * len(headers))
+    header_map = {h.lower(): i for i, h in enumerate(headers)}
+
+    all_rows = []
     for fdt in fdt_points:
-        name = fdt['name']
         row = [""] * len(headers)
-        row[1:5] = prev_row[1:5]
-        row[5] = district.upper()
-        row[6] = subdistrict.upper()
-        row[7] = kmz_filename
-        row[8] = name
-        row[9] = name
-        row[10] = fdt['lat']
-        row[11] = fdt['lon']
-        row[13:15] = prev_row[13:15]
-        row[24:27] = prev_row[24:27]
-        row[28] = vendor.upper()
-        row[33] = vendor.upper()
-        row[34] = formatted_date
-        row[18] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
 
-        if 'templatecode' in header_map:
-            row[header_map['templatecode']] = fdt['description']
+        row[header_map.get("templatecode", 0)] = fdt["description"]
+        row[header_map.get("district", 5)] = district.upper()
+        row[header_map.get("subdistrict", 6)] = subdistrict.upper()
+        row[header_map.get("fdtname", 8)] = fdt["name"]
+        row[header_map.get("fdtid", 9)] = fdt["name"]
+        row[header_map.get("latitude", 10)] = fdt["lat"]
+        row[header_map.get("longitude", 11)] = fdt["lon"]
+        row[header_map.get("kmz file", 7)] = kmz_name
 
-        # Rules for M (12), R (17), AP (40)
-        core = extract_value(name, r'FDT\s*(\d+)', as_int=True)
-        if core:
-            row[12] = {48: '2', 72: '3', 96: '4'}.get(core, '')
-            row[17] = {48: '4', 72: '6', 96: '8'}.get(core, '')
-            row[40] = {48: 'FDT TYPE 48 CORE', 72: 'FDT TYPE 72 CORE', 96: 'FDT TYPE 96 CORE'}.get(core, '')
+        row = duplicate_columns(row, prev_row, [1, 2, 3, 4, 13, 14, 24, 25, 26, 27, 29, 30, 18])
+        row[header_map.get("installation date", 33)] = format_date(prev_row[header_map.get("installation date", 33)])
+        row[header_map.get("vendor name", 31)] = vendor.upper()
+        row[header_map.get("vendor", 44)] = vendor.upper()
 
-        rows.append(row)
+        capacity, m_val, r_val, fdt_type = parse_fdt_capacity(fdt["name"])
+        row[header_map.get("m", 12)] = m_val
+        row[header_map.get("r", 17)] = r_val
+        row[header_map.get("fdt type", 41)] = fdt_type
 
-    sheet.append_rows(rows)
+        # Find nearest 7-4 pole
+        nearest = min(poles_74, key=lambda p: dist([fdt["lat"], fdt["lon"]], [p["lat"], p["lon"]]))
+        row[header_map.get("parentid 1", 39)] = nearest["name"]
 
+        all_rows.append(row)
 
-def append_to_cable_cluster_sheet(sheet, cables, vendor, kmz_filename):
+    sheet.append_rows(all_rows)
+
+def append_to_cable_cluster_sheet(sheet, cables, vendor, kmz_name):
     headers = sheet.row_values(1)
-    header_map = {h.strip().lower(): i for i, h in enumerate(headers)}
-    prev_row = next((r for r in reversed(sheet.get_all_values()) if any(r)), [""] * len(headers))
-    today = datetime.today()
-    formatted_date = today.strftime("%d/%m/%Y") if '/' in prev_row[header_map['y']] else today.strftime("%Y-%m-%d")
+    values = sheet.get_all_values()
+    prev_row = next((row for row in reversed(values) if any(row)), [""] * len(headers))
+    header_map = {h.lower(): i for i, h in enumerate(headers)}
 
-    rows = []
-    for c in cables:
+    all_rows = []
+    for cable in cables:
         row = [""] * len(headers)
-        row[0] = row[1] = c['name']
-        row[2:6] = prev_row[2:6]
-        row[10] = prev_row[10]
-        row[20:22] = prev_row[20:22]
-        row[38] = vendor.upper()
-        row[36] = kmz_filename
-        row[24] = formatted_date
 
-        row[9] = str(extract_value(c['name'], r'FO\s*(\d+)/(\d+)T', default=''))
-        row[16] = str(extract_value(c['name'], r'AE[-\s]*(\d+)', default=''))
-        if 'path_length' in c:
-            row[15] = f"{c['path_length']:.2f}"
+        row[header_map.get("name", 0)] = cable["name"]
+        row[header_map.get("id", 1)] = cable["name"]
 
-        rows.append(row)
+        row = duplicate_columns(row, prev_row, [2, 3, 4, 5, 10, 20, 21])
+        row[header_map.get("kmz file", 36)] = kmz_name
+        row[header_map.get("vendor name", 38)] = vendor.upper()
+        row[header_map.get("installation date", 24)] = format_date(prev_row[header_map.get("installation date", 24)])
 
-    sheet.append_rows(rows)
+        row[header_map.get("j", 9)] = parse_cable_j(cable["name"])
+        row[header_map.get("q", 16)] = parse_distance_q(cable["name"])
+        row[header_map.get("p", 15)] = str(cable.get("length", ""))
 
+        all_rows.append(row)
 
-def append_to_subfeeder_cable_sheet(sheet, cables, vendor, kmz_filename):
+    sheet.append_rows(all_rows)
+
+def append_to_subfeeder_cable_sheet(sheet, cables, vendor, kmz_name):
     headers = sheet.row_values(1)
-    header_map = {h.strip().lower(): i for i, h in enumerate(headers)}
-    prev_row = next((r for r in reversed(sheet.get_all_values()) if any(r)), [""] * len(headers))
-    today = datetime.today()
-    formatted_date = today.strftime("%d/%m/%Y") if '/' in prev_row[header_map['y']] else today.strftime("%Y-%m-%d")
+    values = sheet.get_all_values()
+    prev_row = next((row for row in reversed(values) if any(row)), [""] * len(headers))
+    header_map = {h.lower(): i for i, h in enumerate(headers)}
 
-    rows = []
-    for c in cables:
+    all_rows = []
+    for cable in cables:
         row = [""] * len(headers)
-        row[0] = row[1] = c['name']
-        row[2:6] = prev_row[2:6]
-        row[10:12] = prev_row[10:12]
-        row[20:22] = prev_row[20:22]
-        row[35] = prev_row[35]
-        row[38] = vendor.upper()
-        row[36] = kmz_filename
-        row[24] = formatted_date
 
-        row[9] = str(extract_value(c['name'], r'FO\s*(\d+)/(\d+)T', default=''))
-        row[12] = str(extract_value(c['name'], r'FO\s*(\d+)', default=''))
-        row[16] = str(extract_value(c['name'], r'AE[-\s]*(\d+)', default=''))
-        if 'path_length' in c:
-            row[15] = f"{c['path_length']:.2f}"
+        row[header_map.get("name", 0)] = cable["name"]
+        row[header_map.get("id", 1)] = cable["name"]
 
-        rows.append(row)
+        row = duplicate_columns(row, prev_row, [2, 3, 4, 5, 10, 11, 20, 21, 35])
+        row[header_map.get("vendor name", 38)] = vendor.upper()
+        row[header_map.get("kmz file", 36)] = kmz_name
+        row[header_map.get("installation date", 24)] = format_date(prev_row[header_map.get("installation date", 24)])
 
-    sheet.append_rows(rows)
+        row[header_map.get("j", 9)] = parse_cable_j(cable["name"])
+        row[header_map.get("m", 12)] = parse_cable_j(cable["name"]) if "96" not in cable["name"] else 96
+        row[header_map.get("q", 16)] = parse_distance_q(cable["name"])
+        row[header_map.get("p", 15)] = str(cable.get("length", ""))
+
+        all_rows.append(row)
+
+    sheet.append_rows(all_rows)
