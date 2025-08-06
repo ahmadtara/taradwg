@@ -81,15 +81,21 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         ], [float(p['lat']), float(p['lon'])])) if pole_data else {}
 
         # Kolom logika berdasarkan kapasitas FDT
-        capacity = int(re.findall(r'\d+', name)[0]) if re.findall(r'\d+', name) else 0
-        kolom_m = capacity // 24 if capacity else ""
-        kolom_r = (capacity * 2) // 24 if capacity else ""
-        kolom_ap = f"FDT TYPE {capacity} CORE" if capacity else ""
+        ef templatecode_to_kolom_m(templatecode):
+    mapping = {
+        "FDT 48": "2",
+        "FDT 72": "3",
+        "FDT 96": "4"
+    }
+    return mapping.get(templatecode.strip().upper(), "")
+
+kolom_m = templatecode_to_kolom_m(template_row[0])
+   
 
         row = [""] * 45
         row[0] = desc                       # A
-        row[1:5] = template_row[1:5]         # B-E
-        row[5] = district                    # F
+        row[1:5] = template_row[1:5]        # B-E
+        row[5] = district                   # F
         row[6] = subdistrict                # G
         row[7] = kmz_name                   # H
         row[8] = name                       # I
@@ -98,7 +104,7 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[11] = lon                       # L
         row[12] = kolom_m                   # M
         row[13:14] = template_row[13:14]    # N
-        row[14:16] = template_row[14:16]    # O, P
+        row[14:16] = template_row[14:16]    
         row[17] = kolom_r                   # R
         row[18] = template_row[18]          # S
         row[24:27] = template_row[24:27]  
@@ -206,6 +212,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
