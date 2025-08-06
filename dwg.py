@@ -101,11 +101,10 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[14:16] = template_row[14:16]    # O, P
         row[17] = kolom_r                   # R
         row[18] = template_row[18]          # S
-        row[24:26] = [vendor] * 2           # Y, Z
+        row[24] =  desc   
         row[26:30] = template_row[26:30]    # AA, AB, AC, AD
         row[30] = template_row[30]          # AE
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
-        row[37] = kolom_ap                  # AP
         row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
 
         row[44] = vendor                    # AS
@@ -208,4 +207,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
