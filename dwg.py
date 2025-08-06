@@ -109,7 +109,7 @@ if submit_clicked:
                 append_poles_to_main_sheet(sheet1, poles_cluster, district_input, subdistrict_input, vendor_input)
 
             if fat_points:
-                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
+                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
                 append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
             else:
                 st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
@@ -149,4 +149,3 @@ if submit_clicked:
 
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER: {e}")
-
