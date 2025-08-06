@@ -85,7 +85,7 @@ def extract_data_from_kmz(kmz_file):
     return folders
     
 def extract_points_from_kmz(kmz_path):
-    fat_points, poles, poles_subfeeder = [], [], []
+    fdt_points, poles, poles_subfeeder = [], [], []
 
     def recurse_folder(folder, ns, path=""):
         items = []
@@ -116,8 +116,8 @@ def extract_points_from_kmz(kmz_path):
 
     for p in all_pm:
         base_folder = p["path"].split("/")[0].upper()
-        if base_folder == "FAT":
-            fat_points.append(p)
+        if base_folder == "FDT":
+            fdt_points.append(p)
         elif base_folder == "NEW POLE 7-4":
             poles.append({**p, "folder": "7m4inch", "height": "7"})
         elif base_folder == "NEW POLE 9-4":
@@ -172,11 +172,6 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
     header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
-
-    idx_parentid = header_map.get('parentid 1')
-    if idx_parentid is None:
-        st.error("Kolom 'Parentid 1' tidak ditemukan di header spreadsheet.")
-        return 0
 
     for fdt in fdt_data:
         name = fdt['name']
@@ -315,6 +310,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
