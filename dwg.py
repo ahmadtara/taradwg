@@ -111,24 +111,29 @@ def is_float(value):
     except (TypeError, ValueError):
         return False
 
-
 def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
     header_map = {header.lower(): idx for idx, header in enumerate(existing_rows[0])}
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
+
+    # Cek posisi kolom parentid 1 di awal
+    idx_parentid = header_map.get('parentid 1')
+    if idx_parentid is None:
+        st.error("Kolom 'Parentid 1' tidak ditemukan di header spreadsheet.")
+        return 0
+
     for fdt in fdt_data:
         name = fdt['name']
         lat = fdt['lat']
         lon = fdt['lon']
         desc = fdt.get('description', '')
 
-
         kolom_m = templatecode_to_kolom_m(template_row[0])
         kolom_r = templatecode_to_kolom_r(template_row[0])
         kolom_ap = templatecode_to_kolom_ap(template_row[0])
 
-        row = [""] * 45
+        row = [""] * len(existing_rows[0])
         row[0] = desc                         # A (Templatecode)
         row[1:5] = template_row[1:5]          # B-E
         row[5] = district                     # F
@@ -143,23 +148,23 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[17] = kolom_r                     # R
         row[18] = template_row[18]            # S
         row[24:26] = template_row[24:26]      # Y-AA
-        row[26] = template_row[26] 
+        row[26] = template_row[26]            # AB
         row[29] = template_row[29]            # AD
-        row[30] = template_row[30]            # AE (duplikat dari AD)
+        row[30] = template_row[30]            # AE
         row[40] = template_row[40]            # AO
-        row[41] = kolom_ap                    # AP 
+        row[41] = kolom_ap                    # AP
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-        idx_an = header_map.get('parentid 1')
-        if idx_an is not None:
-            row[idx_an] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
 
-            
-        rows.append(row)  # <-- ini juga perlu diindentasikan di dalam loop
-        
+        # Isi Parentid 1 berdasarkan pole terdekat dari folder "NEW POLE 7-4"
+        row[idx_parentid] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
+
+        rows.append(row)
+
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
     return len(rows)
+
 
 def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     rows = []
@@ -253,6 +258,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
