@@ -282,11 +282,11 @@ def main():
             kmz_name = kmz_fdt_file.name.replace(".kmz", "")
             if client is None:
                 client = authenticate_google()
-	        all_poles = []
-        	for folder_name in [
-            	"NEW POLE 7-4", "NEW POLE 7-3", "NEW POLE 9-4",
-            	"EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 9-4"
-            	]:            
+	    all_poles = []
+            for folder_name in [
+            "NEW POLE 7-4", "NEW POLE 7-3", "NEW POLE 9-4",
+            "EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 9-4"
+            ]:            
             if poles_7_4:
                 st.success(f"✅ {len(poles_7_4)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
             else:
@@ -319,6 +319,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
