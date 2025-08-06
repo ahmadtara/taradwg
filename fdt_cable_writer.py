@@ -17,7 +17,7 @@ def authenticate_google():
     return client
 
 def haversine_distance(lat1, lon1, lat2, lon2):
-    R = 6371000
+    R = 6371000  # Earth radius in meters
     phi1, phi2 = radians(lat1), radians(lat2)
     delta_phi = radians(lat2 - lat1)
     delta_lambda = radians(lon2 - lon1)
@@ -49,11 +49,14 @@ def extract_points_from_kmz(kmz_path):
                     continue
                 coords = coord_el.text.strip().split(",")
                 lon, lat = float(coords[0]), float(coords[1])
+
+                raw_desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
+
                 item = {
                     "name": name_el.text.strip(),
                     "lat": lat,
                     "lon": lon,
-                    "description": desc_el.text.strip() if desc_el is not None else ""
+                    "description": raw_desc
                 }
                 if folder_name == "FDT":
                     points.append(item)
@@ -91,7 +94,7 @@ def extract_paths_from_kmz(kmz_path, folder_match="DISTRIBUTION CABLE"):
                 coords = [tuple(map(float, p.split(",")[:2])) for p in coord_pairs if ',' in p]
 
                 total_length = 0
-                for i in range(len(coords)-1):
+                for i in range(len(coords) - 1):
                     lat1, lon1 = coords[i][1], coords[i][0]
                     lat2, lon2 = coords[i+1][1], coords[i+1][0]
                     total_length += haversine_distance(lat1, lon1, lat2, lon2)
