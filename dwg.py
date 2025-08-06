@@ -26,6 +26,7 @@ SPREADSHEET_ID_4 = "1D_OMm46yr-e80s3sCyvbSSsf8wrUCwpwiYsVBKPgszw"
 SPREADSHEET_ID_5 = "1paa8sT3nTZh_xxwHeKV8pwVIWacq7lC8U9A8BlX6LUw"
 
 SHEET_NAME = "Pole Pekanbaru"
+SHEET_NAME_2 = "Fat Pekanbaru"
 SHEET_NAME_3 = "FDT Pekanbaru"
 SHEET_NAME_4 = "Cable Pekanbaru"
 SHEET_NAME_5 = "Sheet1"
@@ -148,3 +149,4 @@ if submit_clicked:
 
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER: {e}")
+
