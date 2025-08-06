@@ -87,7 +87,7 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         kolom_ap = f"FDT TYPE {capacity} CORE" if capacity else ""
 
         row = [""] * 44
-        row[0] = name                        # A
+        row[0] = desc                       # A
         row[1:5] = template_row[1:5]         # B-E
         row[5] = district                    # F
         row[6] = subdistrict                # G
@@ -107,9 +107,9 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[37] = kolom_ap                  # AP
         row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
-        row[41] = vendor                    # AR
-        row[43] = vendor                    # AT
-        row[29] = desc                      # Templatecode (AD)
+
+        row[44] = vendor                    # AS
+        row[29] = template_row[29]              # AD
 
         rows.append(row)
 
@@ -208,3 +208,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
