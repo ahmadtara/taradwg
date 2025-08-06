@@ -169,6 +169,7 @@ def is_float(value):
 
 def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
+    headers = sheet.row_values(1)
     header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
@@ -310,6 +311,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
