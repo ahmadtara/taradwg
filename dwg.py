@@ -143,9 +143,8 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-        row[39] = find_nearest_pole(fdt, poles)
-
-    rows.append(row)
+        row[39] = find_nearest_pole(fdt, poles)  # <-- Ini saja sudah cukup
+        rows.append(row)  # <-- ini juga perlu diindentasikan di dalam loop
         
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
     return len(rows)
@@ -242,6 +241,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
