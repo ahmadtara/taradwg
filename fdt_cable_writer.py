@@ -50,7 +50,8 @@ def extract_points_from_kmz(kmz_path):
                     continue
 
                 name = name_el.text.strip()
-                description = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
+                description = desc_el.text if desc_el is not None and desc_el.text else ""
+                description = ET.fromstring(f"<root>{description}</root>").text if "<" not in description else ET.fromstring(f"<root>{description}</root>").itertext().__next__()
                 coords = coord_el.text.strip().split(",")
                 lon, lat = float(coords[0]), float(coords[1])
 
@@ -58,7 +59,7 @@ def extract_points_from_kmz(kmz_path):
                     "name": name,
                     "lat": lat,
                     "lon": lon,
-                    "description": description
+                    "description": description.strip()
                 }
 
                 if folder_name == "FDT":
