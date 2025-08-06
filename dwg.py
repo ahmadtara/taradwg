@@ -277,7 +277,7 @@ def main():
     count_subfeeder = 0
 
     if kmz_fdt_file and district and subdistrict and vendor:
-    with st.spinner("🔍 Memproses KMZ FDT..."):
+        with st.spinner("🔍 Memproses KMZ FDT..."):
         folders, poles_7_4 = extract_data_from_kmz(kmz_fdt_file)
         kmz_name = kmz_fdt_file.name.replace(".kmz", "")
         if client is None:
@@ -340,6 +340,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
