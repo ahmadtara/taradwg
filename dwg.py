@@ -27,38 +27,51 @@ def authenticate_google():
 
 def extract_data_from_kmz(kmz_file):
     folders = {}
+
+    def extract_folder(folder_elem, ns, parent_path=""):
+        folder_name_tag = folder_elem.find("kml:name", ns)
+        folder_name = folder_name_tag.text.strip() if folder_name_tag is not None else "Unnamed Folder"
+        full_folder_name = f"{parent_path}/{folder_name}".strip("/")
+
+        placemarks = folder_elem.findall("kml:Placemark", ns)
+        results = []
+
+        for placemark in placemarks:
+            name = placemark.find("kml:name", ns)
+            name = name.text.strip() if name is not None else ""
+
+            coords_tag = placemark.find(".//kml:coordinates", ns)
+            coords = coords_tag.text.strip() if coords_tag is not None else ""
+            coords = coords.split(",") if coords else ["", "", ""]
+
+            description_tag = placemark.find("kml:description", ns)
+            description = description_tag.text.strip() if description_tag is not None else ""
+
+            results.append({
+                'name': name,
+                'lon': coords[0],
+                'lat': coords[1],
+                'alt': coords[2] if len(coords) > 2 else "",
+                'description': description,
+                'folder': full_folder_name
+            })
+
+        if results:
+            folders[full_folder_name] = results
+
+        # Rekursif untuk folder di dalam folder
+        for subfolder in folder_elem.findall("kml:Folder", ns):
+            extract_folder(subfolder, ns, full_folder_name)
+
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = [f for f in z.namelist() if f.endswith('.kml')][0]
         with z.open(kml_filename) as kml_file:
             tree = ET.parse(kml_file)
             root = tree.getroot()
-
             ns = {'kml': 'http://www.opengis.net/kml/2.2'}
             for folder in root.findall(".//kml:Folder", ns):
-                folder_name = folder.find("kml:name", ns).text.strip()
-                placemarks = folder.findall("kml:Placemark", ns)
+                extract_folder(folder, ns)
 
-                results = []
-                for placemark in placemarks:
-                    name = placemark.find("kml:name", ns)
-                    name = name.text.strip() if name is not None else ""
-
-                    coords_tag = placemark.find(".//kml:coordinates", ns)
-                    coords = coords_tag.text.strip() if coords_tag is not None else ""
-                    coords = coords.split(",") if coords else ["", "", ""]
-
-                    description_tag = placemark.find("kml:description", ns)
-                    description = description_tag.text.strip() if description_tag is not None else ""
-
-                    results.append({
-                        'name': name,
-                        'lon': coords[0],
-                        'lat': coords[1],
-                        'alt': coords[2] if len(coords) > 2 else "",
-                        'description': description
-                    })
-
-                folders[folder_name] = results
     return folders
 
 def templatecode_to_kolom_m(templatecode):
@@ -246,3 +259,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
