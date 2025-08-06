@@ -86,7 +86,14 @@ def templatecode_to_kolom_ap(templatecode):
     return mapping.get(templatecode.strip().upper(), "")
 
 def find_nearest_pole(fdt_point, poles):
-    fdt_lat, fdt_lon = float(fdt_point['lat']), float(fdt_point['lon'])
+    min_dist = float('inf')
+    nearest_name = ""
+    for pole in poles:
+        d = dist([fdt_point['lat'], fdt_point['lon']], [pole['lat'], pole['lon']])
+        if d < min_dist:
+            min_dist = d
+            nearest_name = pole['name']
+    return nearest_name
     
     # Filter hanya poles dengan lat/lon yang bisa diubah ke float
     valid_poles = [p for p in poles if is_float(p['lat']) and is_float(p['lon'])]
@@ -143,7 +150,11 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-        row[39] = find_nearest_pole(fdt, poles)  # <-- Ini saja sudah cukup
+
+         idx_ag = header_map.get('parentid 1')
+        if idx_ag is not None:
+            row[idx_ag] = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m4inch'])
+        
         rows.append(row)  # <-- ini juga perlu diindentasikan di dalam loop
         
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
@@ -241,6 +252,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
