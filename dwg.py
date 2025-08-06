@@ -30,6 +30,38 @@ def authenticate_google():
     client = gspread.authorize(credentials)
     return client
 
+def extract_data_from_kmz(kmz_file):
+    folders = {}
+    with zipfile.ZipFile(kmz_file, 'r') as z:
+        kml_filename = [f for f in z.namelist() if f.endswith('.kml')][0]
+        with z.open(kml_filename) as kml_file:
+            tree = ET.parse(kml_file)
+            root = tree.getroot()
+
+            ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+            for folder in root.findall(".//kml:Folder", ns):
+                folder_name = folder.find("kml:name", ns).text.strip()
+                placemarks = folder.findall("kml:Placemark", ns)
+
+                results = []
+                for placemark in placemarks:
+                    name = placemark.find("kml:name", ns)
+                    name = name.text.strip() if name is not None else ""
+
+                    coords_tag = placemark.find(".//kml:coordinates", ns)
+                    coords = coords_tag.text.strip() if coords_tag is not None else ""
+                    coords = coords.split(",") if coords else ["", "", ""]
+
+                    results.append({
+                        'name': name,
+                        'lon': coords[0],
+                        'lat': coords[1],
+                        'alt': coords[2] if len(coords) > 2 else ""
+                    })
+
+                folders[folder_name] = results
+    return folders
+
 # ... fungsi lainnya tidak berubah ...
 
 # 🔽 MAIN STREAMLIT UI
