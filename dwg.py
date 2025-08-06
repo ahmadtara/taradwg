@@ -90,6 +90,11 @@ def templatecode_to_kolom_ap(templatecode):
     }
     return mapping.get(templatecode.strip().upper(), "")
 
+def find_nearest_pole(fdt_point, poles):
+    fdt_lat, fdt_lon = float(fdt_point['lat']), float(fdt_point['lon'])
+    closest = min(poles, key=lambda p: dist([fdt_lat, fdt_lon], [float(p['lat']), float(p['lon'])]))
+    return closest['name'] if closest else ''
+
 def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
@@ -100,10 +105,6 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         lon = fdt['lon']
         desc = fdt.get('description', '')
 
-        def find_nearest_pole(fdt_point, poles):
-        fdt_lat, fdt_lon = float(fdt_point['lat']), float(fdt_point['lon'])
-        closest = min(poles, key=lambda p: dist([fdt_lat, fdt_lon], [float(p['lat']), float(p['lon'])]))
-        return closest['name'] if closest else ''
 
         kolom_m = templatecode_to_kolom_m(template_row[0])
         kolom_r = templatecode_to_kolom_r(template_row[0])
@@ -133,11 +134,9 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
       
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-               idx_ag = header_map.get('parentid 1')
-                if idx_ag is not None:
-            row[idx_ag] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == 'NEW POLE 7-4'])
-
-
+              idx_ag = header_map.get('parentid 1')
+if idx_ag is not None:
+    row[idx_ag] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == 'NEW POLE 7-4'])
 
     rows.append(row)
         
@@ -236,6 +235,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
