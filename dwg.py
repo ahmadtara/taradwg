@@ -66,6 +66,14 @@ def extract_data_from_kmz(kmz_file):
                 folders[folder_name] = results
     return folders
 
+def templatecode_to_kolom_m(templatecode):
+    mapping = {
+        "FDT 48": "2",
+        "FDT 72": "3",
+        "FDT 96": "4"
+    }
+    return mapping.get(templatecode.strip().upper(), "")
+
 def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
@@ -80,40 +88,31 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
             float(lat), float(lon)
         ], [float(p['lat']), float(p['lon'])])) if pole_data else {}
 
-        # Kolom logika berdasarkan kapasitas FDT
-        ef templatecode_to_kolom_m(templatecode):
-    mapping = {
-        "FDT 48": "2",
-        "FDT 72": "3",
-        "FDT 96": "4"
-    }
-    return mapping.get(templatecode.strip().upper(), "")
-
-kolom_m = templatecode_to_kolom_m(template_row[0])
-   
+        kolom_m = templatecode_to_kolom_m(desc)
+        kolom_r = template_row[17] if len(template_row) > 17 else ""
 
         row = [""] * 45
-        row[0] = desc                       # A
-        row[1:5] = template_row[1:5]        # B-E
-        row[5] = district                   # F
-        row[6] = subdistrict                # G
-        row[7] = kmz_name                   # H
-        row[8] = name                       # I
-        row[9] = name                       # J
-        row[10] = lat                       # K
-        row[11] = lon                       # L
-        row[12] = kolom_m                   # M
-        row[13:14] = template_row[13:14]    # N
-        row[14:16] = template_row[14:16]    
-        row[17] = kolom_r                   # R
-        row[18] = template_row[18]          # S
-        row[24:27] = template_row[24:27]  
-        row[26:30] = template_row[26:30]    # AA, AB, AC, AD
-        row[40] = template_row[40]          # AE
+        row[0] = desc                         # A (Templatecode)
+        row[1:5] = template_row[1:5]          # B-E
+        row[5] = district                     # F
+        row[6] = subdistrict                  # G
+        row[7] = kmz_name                     # H
+        row[8] = name                         # I
+        row[9] = name                         # J
+        row[10] = lat                         # K
+        row[11] = lon                         # L
+        row[12] = kolom_m                     # M
+        row[13:16] = template_row[13:16]      # N-P
+        row[17] = kolom_r                     # R
+        row[18] = template_row[18]            # S
+        row[24:27] = template_row[24:27]      # Y-AA
+        row[29] = template_row[29]            # AD
+        row[30] = template_row[29]            # AE (duplikat dari AD)
+        row[40] = template_row[40]            # AO
+        row[41] = template_row[40]            # AF (duplikat dari AO)
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
-        row[44] = vendor                    # AS
-        row[29:30] = template_row[29:30]           
+        row[44] = vendor                      # AS
 
         rows.append(row)
 
@@ -212,10 +211,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
