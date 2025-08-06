@@ -26,17 +26,13 @@ def authenticate_google():
     return client
 
 def extract_data_from_kmz(kmz_file):
-    folders = {}
+    def parse_folder(folder_element, ns, folder_path=""):
+        folder_name_el = folder_element.find("kml:name", ns)
+        folder_name = folder_name_el.text.strip() if folder_name_el is not None else "Unknown"
+        full_folder_path = f"{folder_path}/{folder_name}" if folder_path else folder_name
 
-    def extract_folder(folder_elem, ns, parent_path=""):
-        folder_name_tag = folder_elem.find("kml:name", ns)
-        folder_name = folder_name_tag.text.strip() if folder_name_tag is not None else "Unnamed Folder"
-        full_folder_name = f"{parent_path}/{folder_name}".strip("/")
-
-        placemarks = folder_elem.findall("kml:Placemark", ns)
-        results = []
-
-        for placemark in placemarks:
+        placemarks = []
+        for placemark in folder_element.findall("kml:Placemark", ns):
             name = placemark.find("kml:name", ns)
             name = name.text.strip() if name is not None else ""
 
@@ -47,30 +43,44 @@ def extract_data_from_kmz(kmz_file):
             description_tag = placemark.find("kml:description", ns)
             description = description_tag.text.strip() if description_tag is not None else ""
 
-            results.append({
+            placemarks.append({
                 'name': name,
                 'lon': coords[0],
                 'lat': coords[1],
                 'alt': coords[2] if len(coords) > 2 else "",
                 'description': description,
-                'folder': full_folder_name
+                'folder': full_folder_path.split("/")[-1],
+                'full_path': full_folder_path
             })
 
-        if results:
-            folders[full_folder_name] = results
+        for subfolder in folder_element.findall("kml:Folder", ns):
+            placemarks.extend(parse_folder(subfolder, ns, full_folder_path))
 
-        # Rekursif untuk folder di dalam folder
-        for subfolder in folder_elem.findall("kml:Folder", ns):
-            extract_folder(subfolder, ns, full_folder_name)
+        return placemarks
 
+    folders = {}
+    new_pole_found = False
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = [f for f in z.namelist() if f.endswith('.kml')][0]
         with z.open(kml_filename) as kml_file:
             tree = ET.parse(kml_file)
             root = tree.getroot()
+
             ns = {'kml': 'http://www.opengis.net/kml/2.2'}
             for folder in root.findall(".//kml:Folder", ns):
-                extract_folder(folder, ns)
+                folder_name_el = folder.find("kml:name", ns)
+                folder_name = folder_name_el.text.strip() if folder_name_el is not None else "Unknown"
+                placemarks = parse_folder(folder, ns)
+                if folder_name not in folders:
+                    folders[folder_name] = []
+                folders[folder_name].extend(placemarks)
+                if folder_name.upper().startswith("NEW POLE") and placemarks:
+                    new_pole_found = True
+
+    if not new_pole_found:
+        st.warning("⚠️ Tidak ditemukan titik tiang di folder yang diawali dengan 'NEW POLE' dalam KMZ.")
+    else:
+        st.success("✅ Titik tiang dari folder 'NEW POLE' berhasil ditemukan dalam KMZ.")
 
     return folders
 
@@ -259,4 +269,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
