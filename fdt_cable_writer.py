@@ -1,103 +1,106 @@
+# fdt_cable_writer.py
+
 import zipfile
 import xml.etree.ElementTree as ET
-from io import BytesIO
-from datetime import datetime
-import streamlit as st
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from math import radians, cos, sin, sqrt, atan2
+from sheet_utils import get_latest_row_data, parse_date_format, extract_distance
 
+def authenticate_google():
+    import streamlit as st
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
 
-def authenticate_google(secret_dict):
+    creds_dict = st.secrets["gcp_service_account"]
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    credentials = ServiceAccountCredentials.from_json_keyfile_dict(secret_dict, scope)
+    credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(credentials)
     return client
 
-def extract_points_from_kmz(kmz_path):
-    fdt_points, poles_74 = [], []
+def haversine_distance(lat1, lon1, lat2, lon2):
+    R = 6371000
+    phi1, phi2 = radians(lat1), radians(lat2)
+    delta_phi = radians(lat2 - lat1)
+    delta_lambda = radians(lon2 - lon1)
+    a = sin(delta_phi / 2)**2 + cos(phi1) * cos(phi2) * sin(delta_lambda / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
 
-    def recurse_folder(folder, ns, path=""):
-        items = []
-        name_el = folder.find("kml:name", ns)
-        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
-        new_path = f"{path}/{folder_name}" if path else folder_name
-        for sub in folder.findall("kml:Folder", ns):
-            items += recurse_folder(sub, ns, new_path)
-        for pm in folder.findall("kml:Placemark", ns):
-            name_el = pm.find("kml:name", ns)
-            desc_el = pm.find("kml:description", ns)
-            coord_el = pm.find(".//kml:coordinates", ns)
-            if name_el is not None and coord_el is not None:
-                lon, lat = map(float, coord_el.text.strip().split(",")[:2])
-                items.append({
-                    "name": name_el.text.strip(),
-                    "lat": lat,
-                    "lon": lon,
-                    "path": new_path,
-                    "description": desc_el.text.strip() if desc_el is not None else ""
-                })
-        return items
+def extract_points_from_kmz(kmz_path):
+    points = []
+    poles_74 = []
+    ns = {"kml": "http://www.opengis.net/kml/2.2"}
 
     with zipfile.ZipFile(kmz_path, 'r') as zf:
         kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
         if not kml_file:
             return [], []
 
-        root = ET.parse(zf.open(kml_file)).getroot()
-        ns = {"kml": "http://www.opengis.net/kml/2.2"}
-        all_points = []
+        tree = ET.parse(zf.open(kml_file))
+        root = tree.getroot()
+
         for folder in root.findall(".//kml:Folder", ns):
-            all_points += recurse_folder(folder, ns)
+            folder_name_el = folder.find("kml:name", ns)
+            folder_name = folder_name_el.text.strip().upper() if folder_name_el is not None else ""
+            for pm in folder.findall("kml:Placemark", ns):
+                name_el = pm.find("kml:name", ns)
+                desc_el = pm.find("kml:description", ns)
+                coord_el = pm.find(".//kml:coordinates", ns)
+                if name_el is None or coord_el is None:
+                    continue
+                coords = coord_el.text.strip().split(",")
+                lon, lat = float(coords[0]), float(coords[1])
+                item = {
+                    "name": name_el.text.strip(),
+                    "lat": lat,
+                    "lon": lon,
+                    "description": desc_el.text.strip() if desc_el is not None else ""
+                }
+                if folder_name == "FDT":
+                    points.append(item)
+                elif folder_name == "NEW POLE 7-4":
+                    poles_74.append(item)
 
-    for pt in all_points:
-        base = pt["path"].split("/")[0].upper()
-        if base == "FDT":
-            fdt_points.append(pt)
-        elif base == "NEW POLE 7-4":
-            poles_74.append(pt)
-
-    return fdt_points, poles_74
+    return points, poles_74
 
 def extract_paths_from_kmz(kmz_path, folder_match="DISTRIBUTION CABLE"):
-    paths = []
-
-    def recurse_folder(folder, ns, path=""):
-        items = []
-        name_el = folder.find("kml:name", ns)
-        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
-        new_path = f"{path}/{folder_name}" if path else folder_name
-        for sub in folder.findall("kml:Folder", ns):
-            items += recurse_folder(sub, ns, new_path)
-        for pm in folder.findall("kml:Placemark", ns):
-            name_el = pm.find("kml:name", ns)
-            coord_els = pm.findall(".//kml:coordinates", ns)
-            if name_el is not None and coord_els:
-                coords = []
-                for coord_el in coord_els:
-                    text = coord_el.text.strip()
-                    for line in text.split():
-                        parts = line.strip().split(',')
-                        if len(parts) >= 2:
-                            lon, lat = map(float, parts[:2])
-                            coords.append((lat, lon))
-                if len(coords) >= 2:
-                    items.append({
-                        "name": name_el.text.strip(),
-                        "coords": coords,
-                        "path": new_path
-                    })
-        return items
+    path_items = []
+    ns = {"kml": "http://www.opengis.net/kml/2.2"}
 
     with zipfile.ZipFile(kmz_path, 'r') as zf:
         kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
         if not kml_file:
             return []
 
-        root = ET.parse(zf.open(kml_file)).getroot()
-        ns = {"kml": "http://www.opengis.net/kml/2.2"}
-        all_paths = []
-        for folder in root.findall(".//kml:Folder", ns):
-            all_paths += recurse_folder(folder, ns)
+        tree = ET.parse(zf.open(kml_file))
+        root = tree.getroot()
 
-    filtered = [p for p in all_paths if folder_match.upper() in p["path"]]
-    return filtered
+        for folder in root.findall(".//kml:Folder", ns):
+            folder_name_el = folder.find("kml:name", ns)
+            folder_name = folder_name_el.text.strip().upper() if folder_name_el is not None else ""
+            if folder_match not in folder_name:
+                continue
+
+            for pm in folder.findall("kml:Placemark", ns):
+                name_el = pm.find("kml:name", ns)
+                coord_el = pm.find(".//kml:coordinates", ns)
+                if name_el is None or coord_el is None:
+                    continue
+
+                name = name_el.text.strip()
+                coord_pairs = coord_el.text.strip().split()
+                coords = [tuple(map(float, p.split(",")[:2])) for p in coord_pairs if ',' in p]
+
+                total_length = 0
+                for i in range(len(coords)-1):
+                    lat1, lon1 = coords[i][1], coords[i][0]
+                    lat2, lon2 = coords[i+1][1], coords[i+1][0]
+                    total_length += haversine_distance(lat1, lon1, lat2, lon2)
+
+                path_items.append({
+                    "name": name,
+                    "length_m": round(total_length),
+                    "coords": coords,
+                    "folder": folder_name
+                })
+
+    return path_items
