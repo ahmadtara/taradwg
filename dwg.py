@@ -87,7 +87,22 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
 
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
 
-# ... fungsi lainnya tidak berubah ...
+def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz_name):
+    rows = []
+    for cable in cable_data:
+        row = [
+            cable['name'],
+            cable['lat'],
+            cable['lon'],
+            district,
+            subdistrict,
+            vendor,
+            kmz_name,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ]
+        rows.append(row)
+
+    sheet.append_rows(rows, value_input_option="USER_ENTERED")
 
 # 🔽 MAIN STREAMLIT UI
 
