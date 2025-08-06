@@ -1,77 +1,145 @@
-from datetime import datetime
-import re
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import streamlit as st
 import zipfile
-import os
+import xml.etree.ElementTree as ET
+from io import BytesIO
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import tempfile
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2 import service_account
+from datetime import datetime
 
-from sheet_writer import (
-    append_poles_to_main_sheet,
-    append_fat_to_sheet,
-    append_to_fdt_sheet,
-    append_to_cable_cluster_sheet,
-    append_to_subfeeder_cable_sheet
-)
-from kmz_parser import extract_points_from_kmz
+dist = __import__('math').dist
 
 SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
 SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
-SPREADSHEET_ID_4 = "1D_OMm46yr-e80s3sCyvbSSsf8wrUCwpwiYsVBKPgszw"
-SPREADSHEET_ID_5 = "1paa8sT3nTZh_xxwHeKV8pwVIWacq7lC8U9A8BlX6LUw"
-
 SHEET_NAME = "Pole Pekanbaru"
-SHEET_NAME_2 = "FAT Pekanbaru"
+SHEET_NAME_2 = "Fat Pekanbaru"
 SHEET_NAME_3 = "FDT Pekanbaru"
-SHEET_NAME_4 = "Cable Pekanbaru"
-SHEET_NAME_5 = "Sheet1"
 
-GDRIVE_FOLDERS = {
-    "DISTRIBUTION CABLE": "1XkWqvRX4SUYMrtMQ7vt8197oSja4r9p-",
-    "BOUNDARY CLUSTER": "1IMpaQWnpG8c8P5j3phUMP1G9zTPBDQMi",
-    "CABLE": "16aesqK-OIqYIDAIn_ymLzf1-VkLyXonl"
-}
+_cached_headers = None
+_cached_prev_row = None
 
-def get_client():
+def authenticate_google():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(credentials)
     return client
 
-def upload_kml_to_drive(kmz_path):
-    creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=['https://www.googleapis.com/auth/drive']
-    )
-    drive_service = build('drive', 'v3', credentials=creds)
+def extract_points_from_kmz(kmz_path):
+    fat_points, poles, poles_subfeeder = [], [], []
+
+    def recurse_folder(folder, ns, path=""):
+        items = []
+        name_el = folder.find("kml:name", ns)
+        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
+        new_path = f"{path}/{folder_name}" if path else folder_name
+        for sub in folder.findall("kml:Folder", ns):
+            items += recurse_folder(sub, ns, new_path)
+        for pm in folder.findall("kml:Placemark", ns):
+            nm = pm.find("kml:name", ns)
+            coord = pm.find(".//kml:coordinates", ns)
+            if nm is not None and coord is not None and ',' in coord.text:
+                lon, lat = coord.text.strip().split(",")[:2]
+                items.append({"name": nm.text.strip(), "lat": float(lat), "lon": float(lon), "path": new_path})
+        return items
 
     with zipfile.ZipFile(kmz_path, 'r') as zf:
-        for folder_name in GDRIVE_FOLDERS:
-            for file in zf.namelist():
-                if folder_name in file.upper() and file.lower().endswith(".kml"):
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".kml") as tmp:
-                        tmp.write(zf.read(file))
-                        tmp_path = tmp.name
+        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
+        if not kml_file:
+            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
+            return [], [], []
 
-                    file_metadata = {
-                        'name': os.path.basename(file),
-                        'parents': [GDRIVE_FOLDERS[folder_name]]
-                    }
-                    media = MediaFileUpload(tmp_path, mimetype='application/vnd.google-earth.kml+xml')
+        root = ET.parse(zf.open(kml_file)).getroot()
+        ns = {"kml": "http://www.opengis.net/kml/2.2"}
+        all_pm = []
+        for folder in root.findall(".//kml:Folder", ns):
+            all_pm += recurse_folder(folder, ns)
 
-                    drive_service.files().create(
-                        body=file_metadata,
-                        media_body=media,
-                        fields='id'
-                    ).execute()
-                    st.success(f"📄 File {file} berhasil diupload ke folder {folder_name} di Google Drive.")
+    for p in all_pm:
+        base_folder = p["path"].split("/")[0].upper()
+        if base_folder == "FAT":
+            fat_points.append(p)
+        elif base_folder == "NEW POLE 7-3":
+            poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
+            poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
+        elif base_folder == "NEW POLE 7-4":
+            poles.append({**p, "folder": "7m4inch", "height": "7"})
+        elif base_folder == "NEW POLE 9-4":
+            poles.append({**p, "folder": "9m4inch", "height": "9"})
 
+    return fat_points, poles, poles_subfeeder
+
+def find_nearest_pole(fat_point, poles):
+    min_dist = float('inf')
+    nearest_name = ""
+    for pole in poles:
+        d = dist([fat_point['lat'], fat_point['lon']], [pole['lat'], pole['lon']])
+        if d < min_dist:
+            min_dist = d
+            nearest_name = pole['name']
+    return nearest_name
+
+def extract_fdt_type_info(name):
+    name_upper = name.upper()
+    if "FDT 48" in name_upper:
+        return ("2", "4", "FDT TYPE 48 CORE")
+    elif "FDT 72" in name_upper:
+        return ("3", "6", "FDT TYPE 72 CORE")
+    elif "FDT 96" in name_upper:
+        return ("4", "8", "FDT TYPE 96 CORE")
+    else:
+        return ("", "", "")
+
+def append_fdt_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor):
+    headers = sheet.row_values(1)
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
+    values = sheet.get_all_values()
+
+    for i in range(len(values)-1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
+
+    today = datetime.today()
+    formatted_date = today.strftime("%d/%m/%Y") if prev_row[header_map.get('installationdate', 0)].count("/") == 2 else today.strftime("%Y-%m-%d")
+
+    all_rows = []
+    for fat in fat_points:
+        row = [""] * len(headers)
+        row[0] = fat['name']
+        for col in [1, 2, 3, 4, 13, 14, 24, 25, 26, 27, 29, 30, 18]:
+            if col < len(prev_row):
+                row[col] = prev_row[col]
+        row[5] = district.upper()
+        row[6] = subdistrict.upper()
+        if 'vendor name' in header_map:
+            row[header_map['vendor name']] = vendor.upper()
+        if 'vendorname' in header_map:
+            row[header_map['vendorname']] = vendor.upper()
+        row[7] = fat['path'].split("/")[0]
+        path_parts = fat['path'].split("/")
+        row[8] = path_parts[-1] if len(path_parts) > 1 else ""
+        row[9] = path_parts[-1] if len(path_parts) > 1 else ""
+        row[10] = fat['lat']
+        row[11] = fat['lon']
+        m_val, r_val, ap_val = extract_fdt_type_info(fat['name'])
+        row[12] = m_val
+        row[17] = r_val
+        row[41] = ap_val
+        if 'installationdate' in header_map:
+            row[header_map['installationdate']] = formatted_date
+        if 'parentid 1' in header_map:
+            nearby_pole = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m4inch'])
+            row[header_map['parentid 1']] = nearby_pole
+        all_rows.append(row)
+
+    sheet.append_rows(all_rows)
+    st.success(f"✅ {len(fat_points)} FDT berhasil dikirim ke Spreadsheet ke-3 🛰️")
+
+# TAMBAHAN PADA STREAMLIT SUBMIT
 # === STREAMLIT INTERFACE ===
 st.set_page_config(page_title="Uploader Pole KMZ", layout="centered")
 st.title("📡 Uploader Pole KMZ (CLUSTER + SUBFEEDER + FAT SPLITTER)")
@@ -100,32 +168,30 @@ if submit_clicked:
             kmz_path = tmp.name
 
         with st.spinner("🔍 Membaca data dari KMZ CLUSTER..."):
-            fat_points, poles_cluster, poles_subfeeder, fdt_points, cable_cluster, _ = extract_points_from_kmz(kmz_path)
+            fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path)
 
         try:
-            client = get_client()
+            client = authenticate_google()
             sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
             if poles_cluster:
                 append_poles_to_main_sheet(sheet1, poles_cluster, district_input, subdistrict_input, vendor_input)
-
-            if fat_points:
-                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME)
-                append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
-            else:
-                st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
-
-            if fdt_points:
-                sheet3 = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                append_to_fdt_sheet(sheet3, fdt_points)
-
-            if cable_cluster:
-                sheet4 = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
-                append_to_cable_cluster_sheet(sheet4, cable_cluster)
-
-            upload_kml_to_drive(kmz_path)
-
         except Exception as e:
-            st.error(f"❌ Gagal mengirim data dari CLUSTER: {e}")
+            st.error(f"❌ Gagal mengirim ke spreadsheet utama: {e}")
+
+        if fat_points:
+            try:
+                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
+                append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
+            except Exception as e:
+                st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
+
+            try:
+                sheet3 = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
+                append_fdt_to_sheet(sheet3, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
+            except Exception as e:
+                st.error(f"❌ Gagal mengirim ke spreadsheet ketiga (FDT): {e}")
+        else:
+            st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
 
     if uploaded_subfeeder:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
@@ -133,19 +199,12 @@ if submit_clicked:
             kmz_path = tmp.name
 
         with st.spinner("🔍 Membaca data dari KMZ SUBFEEDER..."):
-            _, poles_subonly, _, _, _, cable_subfeeder = extract_points_from_kmz(kmz_path)
+            _, poles_subonly, _ = extract_points_from_kmz(kmz_path)
 
         try:
-            client = get_client()
+            client = authenticate_google()
             sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
             if poles_subonly:
                 append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
-
-            if cable_subfeeder:
-                sheet5 = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
-                append_to_subfeeder_cable_sheet(sheet5, cable_subfeeder)
-
-            upload_kml_to_drive(kmz_path)
-
         except Exception as e:
-            st.error(f"❌ Gagal mengirim data SUBFEEDER: {e}")
+            st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
