@@ -122,8 +122,8 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[13:16] = template_row[13:16]      # N-P
         row[17] = kolom_r                     # R
         row[18] = template_row[18]            # S
-        row[24:27] = template_row[24:27]      # Y-AA
-        row[28] = template_row[28] 
+        row[24:26] = template_row[24:26]      # Y-AA
+        row[26] = template_row[26] 
         row[29] = template_row[29]            # AD
         row[30] = template_row[30]            # AE (duplikat dari AD)
         row[40] = template_row[40]            # AO
@@ -230,5 +230,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
