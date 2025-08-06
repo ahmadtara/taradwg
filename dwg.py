@@ -76,67 +76,13 @@ def extract_data_from_kmz(kmz_file):
                 folders[folder_name].extend(placemarks)
                 if folder_name.upper().startswith("NEW POLE") and placemarks:
                     new_pole_found = True
-                    
+
+    if not new_pole_found:
+        st.warning("⚠️ Tidak ditemukan titik tiang di folder yang diawali dengan 'NEW POLE' dalam KMZ.")
+    else:
+        st.success("✅ Titik tiang dari folder 'NEW POLE' berhasil ditemukan dalam KMZ.")
+
     return folders
-    
-def extract_points_from_kmz(kmz_path):
-    fdt_points, poles, poles_subfeeder = [], [], []
-
-    def recurse_folder(folder, ns, path=""):
-        items = []
-        name_el = folder.find("kml:name", ns)
-        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
-        new_path = f"{path}/{folder_name}" if path else folder_name
-        for sub in folder.findall("kml:Folder", ns):
-            items += recurse_folder(sub, ns, new_path)
-        for pm in folder.findall("kml:Placemark", ns):
-            nm = pm.find("kml:name", ns)
-            coord = pm.find(".//kml:coordinates", ns)
-            if nm is not None and coord is not None and ',' in coord.text:
-                lon, lat = coord.text.strip().split(",")[:2]
-                items.append({"name": nm.text.strip(), "lat": float(lat), "lon": float(lon), "path": new_path})
-        return items
-
-    with zipfile.ZipFile(kmz_path, 'r') as zf:
-        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
-        if not kml_file:
-            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
-            return [], [], []
-
-        root = ET.parse(zf.open(kml_file)).getroot()
-        ns = {"kml": "http://www.opengis.net/kml/2.2"}
-        all_pm = []
-        for folder in root.findall(".//kml:Folder", ns):
-            all_pm += recurse_folder(folder, ns)
-
-    for p in all_pm:
-        base_folder = p["path"].split("/")[0].upper()
-        if base_folder == "FDT":
-            fdt_points.append(p)
-        elif base_folder == "NEW POLE 7-3":
-            poles.append({**p, "folder": "7m3inch", "height": "7"})
-        elif base_folder == "NEW POLE 7-4":
-            poles.append({**p, "folder": "7m4inch", "height": "7"})
-        elif base_folder == "NEW POLE 9-4":
-            poles.append({**p, "folder": "9m4inch", "height": "9"})
-        elif base_folder == "EXISTING POLE EMR 7-4":
-            poles.append({**p, "folder": "ext7m4inch", "height": "7"})
-        elif base_folder == "EXISTING POLE EMR 7-3":
-            poles.append({**p, "folder": "ext7m3inch", "height": "7"})
-        elif base_folder == "EXISTING POLE EMR 9-4":
-            poles.append({**p, "folder": "ext9m4inch", "height": "9"})
-
-    return fat_points, poles, poles_subfeeder
-
-def find_nearest_pole(fdt_point, poles):
-    min_dist = float('inf')
-    nearest_name = ""
-    for pole in poles:
-        d = dist([fdt_point['lat'], fdt_point['lon']], [pole['lat'], pole['lon']])
-        if d < min_dist:
-            min_dist = d
-            nearest_name = pole['name']
-    return nearest_name
 
 def templatecode_to_kolom_m(templatecode):
     mapping = {
@@ -169,13 +115,23 @@ def is_float(value):
     except (TypeError, ValueError):
         return False
 
+def find_nearest_pole(fdt_point, poles):
+    valid_poles = [p for p in poles if is_float(p['lat']) and is_float(p['lon'])]
+    if not valid_poles:
+        return ''
+    closest = min(valid_poles, key=lambda p: dist([float(fdt_point['lat']), float(fdt_point['lon'])], [float(p['lat']), float(p['lon'])]))
+    return closest['name']
 
 def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
-    headers = sheet.row_values(1)
-    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
+    header_map = {header.lower(): idx for idx, header in enumerate(existing_rows[0])}
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
+
+    idx_parentid = header_map.get('parentid 1')
+    if idx_parentid is None:
+        st.error("Kolom 'Parentid 1' tidak ditemukan di header spreadsheet.")
+        return 0
 
     for fdt in fdt_data:
         name = fdt['name']
@@ -210,12 +166,9 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[33] = datetime.today().strftime("%d/%m/%Y")
         row[31] = vendor
         row[44] = vendor
-        idx_an = header_map.get('parentid 1')
-        if idx_an is not None:
-            row[idx_an] = find_nearest_pole(fdt, [
-                p for p in poles if p['folder'] in ['7m4inch', '7m3inch', 'ext7m3inch', 'ext7m4inch', 'ext9m4inch']
-            ])
-        
+
+        row[idx_parentid] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == 'NEW POLE 7-4'])
+
         rows.append(row)
 
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
@@ -283,11 +236,7 @@ def main():
             if client is None:
                 client = authenticate_google()
 
-	        all_poles = []
-            for folder_name in [
-            "NEW POLE 7-4", "NEW POLE 7-3", "NEW POLE 9-4",
-            "EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 9-4"
-            ]:            
+            poles_7_4 = folders.get("NEW POLE 7-4", [])
             if poles_7_4:
                 st.success(f"✅ {len(poles_7_4)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
             else:
@@ -295,7 +244,7 @@ def main():
 
             if 'FDT' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], all_poles, district, subdistrict, vendor, kmz_name)
+                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles_7_4, district, subdistrict, vendor, kmz_name)
 
             if 'DISTRIBUTION CABLE' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
@@ -320,10 +269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
 
