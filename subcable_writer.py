@@ -1,62 +1,58 @@
-import re
-from datetime import datetime
-from sheet_utils import get_latest_row_data, parse_date_format, extract_distance
+def fill_subfeeder_pekanbaru(sheet, sub_paths, vendor, filename):
+    from datetime import datetime
+    import re
 
-def fill_subfeeder_pekanbaru(sheet, paths, vendor_name, kmz_filename):
     headers = sheet.row_values(1)
-    header_map = {h.strip().lower(): i for i, h in enumerate(headers)}
+    header_map = {name.strip().lower(): idx for idx, name in enumerate(headers)}
 
-    prev_row = get_latest_row_data(sheet)
-    date_fmt = parse_date_format(prev_row[header_map['installationdate']])
-    today = datetime.today().strftime(date_fmt)
+    values = sheet.get_all_values()
+    for i in range(len(values)-1, 0, -1):
+        if any(values[i]):
+            prev_row = values[i]
+            break
+    else:
+        prev_row = [""] * len(headers)
 
-    all_rows = []
-    for path in paths:
+    today = datetime.today()
+    formatted_date = parse_date_format(prev_row[header_map.get('y', 0)], today)
+
+    rows = []
+    for path in sub_paths:
         row = [""] * len(headers)
+        parts = path["name"].split("-")
+        row[0] = parts[0] if len(parts) > 0 else path["name"]
+        row[1] = parts[1] if len(parts) > 1 else path["name"]
 
-        # A-B: titik nama
-        row[0] = path['start_name']
-        row[1] = path['end_name']
+        # FO pattern: FO 24C/2T atau FO 48/4T
+        fo_match = re.search(r"FO\s*(\d+)[A-Z]*\/(\d+)T", path["name"], re.IGNORECASE)
+        if fo_match:
+            m_val = fo_match.group(1)
+            j_val = fo_match.group(2)
+            row[header_map.get('j')] = j_val
+            row[header_map.get('m')] = m_val
 
-        # C-F, K, L, U, V, AJ: copy dari baris sebelumnya
-        for col in ['c', 'd', 'e', 'f', 'k', 'l', 'u', 'v', 'aj']:
-            idx = header_map.get(col.lower())
-            if idx is not None:
-                row[idx] = prev_row[idx]
-
-        # AM: Vendor Name input
-        idx_am = header_map.get('am')
-        if idx_am is not None:
-            row[idx_am] = vendor_name.upper()
-
-        # AK: nama file kmz
-        idx_ak = header_map.get('ak')
-        if idx_ak is not None:
-            row[idx_ak] = kmz_filename
-
-        # Y: tanggal hari ini
-        idx_y = header_map.get('y')
-        if idx_y is not None:
-            row[idx_y] = today
-
-        # J, M: parsing FO xx/xT
-        match = re.search(r'fo\s*(\d+)\s*/\s*(\d+)', path['start_name'].lower())
-        if match:
-            core = int(match.group(1))
-            split = int(match.group(2))
-            row[header_map['j']] = str(split) if 'j' in header_map else ""
-            row[header_map['m']] = str(core) if 'm' in header_map else ""
-
-        # Q: panjang dari AE xxx M
-        ae_match = re.search(r'ae[-\s]*(\d+)\s*m', path['start_name'].lower())
+        # AE pattern: AE-775M atau AE 775 M
+        ae_match = re.search(r"AE[-\s]?(\d+)\s*M", path["name"], re.IGNORECASE)
         if ae_match:
-            row[header_map['q']] = ae_match.group(1)
+            row[header_map.get('q')] = ae_match.group(1)
 
-        # P: panjang path (meter)
+        # Panjang path
         if 'p' in header_map:
-            row[header_map['p']] = round(path.get('length_m', 0), 2)
+            row[header_map['p']] = path["length_m"]
 
-        all_rows.append(row)
+        # Kolom vendor dan filename
+        row[header_map.get('am')] = vendor
+        row[header_map.get('ak')] = filename
 
-    sheet.append_rows(all_rows)
-    return len(all_rows)
+        # Tanggal
+        row[header_map.get('y')] = formatted_date
+
+        # Duplikat kolom tertentu dari baris atas
+        for col in ['c', 'd', 'e', 'f', 'k', 'l', 'u', 'v', 'aj']:
+            if col in header_map:
+                row[header_map[col]] = prev_row[header_map[col]]
+
+        rows.append(row)
+
+    sheet.append_rows(rows)
+    return len(rows)
