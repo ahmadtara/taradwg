@@ -283,7 +283,11 @@ def main():
             if client is None:
                 client = authenticate_google()
 
-            poles_7_4 = folders.get("NEW POLE 7-4", [])
+	        all_poles = []
+            for folder_name in [
+            "NEW POLE 7-4", "NEW POLE 7-3", "NEW POLE 9-4",
+            "EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 9-4"
+            ]:            
             if poles_7_4:
                 st.success(f"✅ {len(poles_7_4)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
             else:
@@ -291,7 +295,7 @@ def main():
 
             if 'FDT' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles_7_4, district, subdistrict, vendor, kmz_name)
+                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], all_poles, district, subdistrict, vendor, kmz_name)
 
             if 'DISTRIBUTION CABLE' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
@@ -316,6 +320,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
