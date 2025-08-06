@@ -90,7 +90,7 @@ def templatecode_to_kolom_ap(templatecode):
     }
     return mapping.get(templatecode.strip().upper(), "")
 
-def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendor, kmz_name):
+def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
@@ -100,9 +100,10 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         lon = fdt['lon']
         desc = fdt.get('description', '')
 
-        nearest_pole = min(pole_data, key=lambda p: dist([
-            float(lat), float(lon)
-        ], [float(p['lat']), float(p['lon'])])) if pole_data else {}
+        def find_nearest_pole(fdt_point, poles):
+        fdt_lat, fdt_lon = float(fdt_point['lat']), float(fdt_point['lon'])
+        closest = min(poles, key=lambda p: dist([fdt_lat, fdt_lon], [float(p['lat']), float(p['lon'])]))
+        return closest['name'] if closest else ''
 
         kolom_m = templatecode_to_kolom_m(template_row[0])
         kolom_r = templatecode_to_kolom_r(template_row[0])
@@ -129,15 +130,16 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[40] = template_row[40]            # AO
         row[41] = kolom_ap                    # AP 
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
-        row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
+      
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-        
-        rows.append(row)
-    # Ini bagian dari fungsi append_fat_to_sheet
-    idx_ag = header_map.get('parentid 1')
-    if idx_ag is not None:
-    row[idx_ag] = find_nearest_pole(fat, [p for p in poles if p['folder'] == '7m3inch'])
+               idx_ag = header_map.get('parentid 1')
+                if idx_ag is not None:
+            row[idx_ag] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == 'NEW POLE 7-4'])
+
+
+
+    rows.append(row)
         
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
     return len(rows)
@@ -234,6 +236,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
