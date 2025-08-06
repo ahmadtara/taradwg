@@ -43,7 +43,7 @@ if submit_clicked:
         st.warning("⚠️ Harap isi semua kolom input manual.")
     else:
         try:
-            client = authenticate_google()
+            client = authenticate_google(st.secrets["gcp_service_account"])
             st.success("✅ Autentikasi Google berhasil.")
         except Exception as e:
             st.error(f"❌ Gagal autentikasi Google: {e}")
@@ -104,3 +104,4 @@ if submit_clicked:
                     st.warning("⚠️ Tidak ditemukan folder CABLE di KMZ SUBFEEDER.")
             except Exception as e:
                 st.error(f"❌ Gagal memproses KMZ SUBFEEDER: {e}")
+
