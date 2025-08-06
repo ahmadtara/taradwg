@@ -74,6 +74,22 @@ def templatecode_to_kolom_m(templatecode):
     }
     return mapping.get(templatecode.strip().upper(), "")
 
+def templatecode_to_kolom_r(templatecode):
+    mapping = {
+        "FDT 48": "4",
+        "FDT 72": "6",
+        "FDT 96": "8"
+    }
+    return mapping.get(templatecode.strip().upper(), "")
+
+def templatecode_to_kolom_ap(templatecode):
+    mapping = {
+        "FDT 48": "FDT TYPE 48 CORE",
+        "FDT 72": "FDT TYPE 72 CORE",
+        "FDT 96": "FDT TYPE 96 CORE"
+    }
+    return mapping.get(templatecode.strip().upper(), "")
+
 def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
@@ -88,8 +104,9 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
             float(lat), float(lon)
         ], [float(p['lat']), float(p['lon'])])) if pole_data else {}
 
-        kolom_m = templatecode_to_kolom_m(desc)
-        kolom_r = template_row[17] if len(template_row) > 17 else ""
+        kolom_m = templatecode_to_kolom_m(template_row[0])
+        kolom_r = templatecode_to_kolom_r(template_row[0])
+        kolom_ap = templatecode_to_kolom_ap(template_row[0])
 
         row = [""] * 45
         row[0] = desc                         # A (Templatecode)
@@ -107,9 +124,9 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[18] = template_row[18]            # S
         row[24:27] = template_row[24:27]      # Y-AA
         row[29] = template_row[29]            # AD
-        row[30] = template_row[29]            # AE (duplikat dari AD)
+        row[30] = template_row[30]            # AE (duplikat dari AD)
         row[40] = template_row[40]            # AO
-        row[41] = template_row[40]            # AF (duplikat dari AO)
+        row[41] = kolom_ap                    # AP 
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
         row[44] = vendor                      # AS
@@ -211,3 +228,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
