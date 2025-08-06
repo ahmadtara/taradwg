@@ -150,11 +150,9 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[31] = vendor                      # AF
         row[44] = vendor                      # AS
-
-         idx_an = header_map.get('parentid 1')
+                idx_an = header_map.get('parentid 1')
         if idx_an is not None:
             row[idx_an] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == '7m4inch'])
-        
         rows.append(row)  # <-- ini juga perlu diindentasikan di dalam loop
         
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
@@ -252,6 +250,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
