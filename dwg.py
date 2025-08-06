@@ -277,28 +277,49 @@ def main():
     count_subfeeder = 0
 
     if kmz_fdt_file and district and subdistrict and vendor:
-        with st.spinner("🔍 Memproses KMZ FDT..."):
-            folders = extract_data_from_kmz(kmz_fdt_file)
-            kmz_name = kmz_fdt_file.name.replace(".kmz", "")
-            if client is None:
-                client = authenticate_google()
-	    all_poles = []
-            for folder_name in [
+    with st.spinner("🔍 Memproses KMZ FDT..."):
+        folders, poles_7_4 = extract_data_from_kmz(kmz_fdt_file)
+        kmz_name = kmz_fdt_file.name.replace(".kmz", "")
+        if client is None:
+            client = authenticate_google()
+
+        all_poles = []
+        for folder_name in [
             "NEW POLE 7-4", "NEW POLE 7-3", "NEW POLE 9-4",
             "EXISTING POLE EMR 7-4", "EXISTING POLE EMR 7-3", "EXISTING POLE EMR 9-4"
-            ]:            
-            if poles_7_4:
-                st.success(f"✅ {len(poles_7_4)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
+        ]:
+            if folder_name in folders:
+                st.success(f"✅ {len(folders[folder_name])} titik tiang dari '{folder_name}' berhasil diambil.")
+                for pm in folders[folder_name]:
+                    if folder_name == "NEW POLE 7-3":
+                        pm["folder"] = "7m3inch"
+                        pm["height"] = "7"
+                    elif folder_name == "NEW POLE 7-4":
+                        pm["folder"] = "7m4inch"
+                        pm["height"] = "7"
+                    elif folder_name == "NEW POLE 9-4":
+                        pm["folder"] = "9m4inch"
+                        pm["height"] = "9"
+                    elif folder_name == "EXISTING POLE EMR 7-3":
+                        pm["folder"] = "ext7m3inch"
+                        pm["height"] = "7"
+                    elif folder_name == "EXISTING POLE EMR 7-4":
+                        pm["folder"] = "ext7m4inch"
+                        pm["height"] = "7"
+                    elif folder_name == "EXISTING POLE EMR 9-4":
+                        pm["folder"] = "ext9m4inch"
+                        pm["height"] = "9"
+                    all_poles.append(pm)
             else:
-                st.warning("⚠️ Tidak ditemukan titik tiang di folder 'NEW POLE 7-4' dalam KMZ.")
+                st.warning(f"⚠️ Tidak ditemukan titik tiang di folder '{folder_name}' dalam KMZ.")
 
-            if 'FDT' in folders:
-                sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], all_poles, district, subdistrict, vendor, kmz_name)
+        if 'FDT' in folders:
+            sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
+            count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], all_poles, district, subdistrict, vendor, kmz_name)
 
-            if 'DISTRIBUTION CABLE' in folders:
-                sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
-                count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
+        if 'DISTRIBUTION CABLE' in folders:
+            sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
+            count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
 
     if kmz_subfeeder_file and district and subdistrict and vendor:
         with st.spinner("🔍 Memproses KMZ Subfeeder..."):
@@ -319,6 +340,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
