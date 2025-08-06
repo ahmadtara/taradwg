@@ -17,7 +17,7 @@ def authenticate_google():
     return client
 
 def haversine_distance(lat1, lon1, lat2, lon2):
-    R = 6371000  # Earth radius in meters
+    R = 6371000
     phi1, phi2 = radians(lat1), radians(lat2)
     delta_phi = radians(lat2 - lat1)
     delta_lambda = radians(lon2 - lon1)
@@ -45,19 +45,22 @@ def extract_points_from_kmz(kmz_path):
                 name_el = pm.find("kml:name", ns)
                 desc_el = pm.find("kml:description", ns)
                 coord_el = pm.find(".//kml:coordinates", ns)
+
                 if name_el is None or coord_el is None:
                     continue
+
+                name = name_el.text.strip()
+                description = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
                 coords = coord_el.text.strip().split(",")
                 lon, lat = float(coords[0]), float(coords[1])
 
-                raw_desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
-
                 item = {
-                    "name": name_el.text.strip(),
+                    "name": name,
                     "lat": lat,
                     "lon": lon,
-                    "description": raw_desc
+                    "description": description
                 }
+
                 if folder_name == "FDT":
                     points.append(item)
                 elif folder_name == "NEW POLE 7-4":
@@ -94,7 +97,7 @@ def extract_paths_from_kmz(kmz_path, folder_match="DISTRIBUTION CABLE"):
                 coords = [tuple(map(float, p.split(",")[:2])) for p in coord_pairs if ',' in p]
 
                 total_length = 0
-                for i in range(len(coords) - 1):
+                for i in range(len(coords)-1):
                     lat1, lon1 = coords[i][1], coords[i][0]
                     lat2, lon2 = coords[i+1][1], coords[i+1][0]
                     total_length += haversine_distance(lat1, lon1, lat2, lon2)
