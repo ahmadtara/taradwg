@@ -107,7 +107,7 @@ def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendo
         row[33] = datetime.today().strftime("%d/%m/%Y")  # AH
         row[39] = nearest_pole.get('name', '')  # AN / Parentid 1
         row[44] = vendor                    # AS
-        row[29] = template_row[29]              # AD
+        row[29:30] = template_row[29:30]           
 
         rows.append(row)
 
@@ -206,6 +206,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
