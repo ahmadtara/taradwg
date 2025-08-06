@@ -62,6 +62,31 @@ def extract_data_from_kmz(kmz_file):
                 folders[folder_name] = results
     return folders
 
+def append_fdt_to_sheet(sheet, fdt_data, pole_data, district, subdistrict, vendor, kmz_name):
+    rows = []
+    for fdt in fdt_data:
+        nearest_pole = min(pole_data, key=lambda p: dist(
+            [float(fdt['lat']), float(fdt['lon'])],
+            [float(p['lat']), float(p['lon'])]
+        )) if pole_data else {}
+
+        row = [
+            fdt['name'],  # FDT Name
+            fdt['lat'],   # FDT Lat
+            fdt['lon'],   # FDT Lon
+            nearest_pole.get('name', ''),
+            nearest_pole.get('lat', ''),
+            nearest_pole.get('lon', ''),
+            district,
+            subdistrict,
+            vendor,
+            kmz_name,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ]
+        rows.append(row)
+
+    sheet.append_rows(rows, value_input_option="USER_ENTERED")
+
 # ... fungsi lainnya tidak berubah ...
 
 # 🔽 MAIN STREAMLIT UI
