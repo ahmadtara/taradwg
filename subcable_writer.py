@@ -24,7 +24,7 @@ def fill_subfeeder_pekanbaru(sheet, sub_paths, vendor, filename):
         row[1] = parts[1] if len(parts) > 1 else path["name"]
 
         # FO pattern: FO 24C/2T atau FO 48/4T
-        fo_match = re.search(r"FO\s*(\d+)[A-Z]*\/(\d+)T", path["name"], re.IGNORECASE)
+       fo_match = re.search(r"FO\s*(\d+)[A-Z]*\/(\d+)T", path["name"], re.IGNORECASE)
         if fo_match:
             m_val = fo_match.group(1)
             j_val = fo_match.group(2)
@@ -32,12 +32,12 @@ def fill_subfeeder_pekanbaru(sheet, sub_paths, vendor, filename):
             row[header_map.get('m')] = m_val
 
         # AE pattern: AE-775M atau AE 775 M
-        ae_match = re.search(r"AE[-\s]?(\d+)\s*M", path["name"], re.IGNORECASE)
+        ae_match = re.search(r"AE[-\s]*([0-9]+)\s*M", path["name"], re.IGNORECASE)
         if ae_match:
             row[header_map.get('q')] = ae_match.group(1)
 
         # Panjang path
-        if 'p' in header_map:
+        if 'p' in header_map and "length_m" in path:
             row[header_map['p']] = path["length_m"]
 
         # Kolom vendor dan filename
