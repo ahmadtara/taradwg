@@ -142,7 +142,7 @@ def append_fdt_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor)
 # TAMBAHAN PADA STREAMLIT SUBMIT
 # === STREAMLIT INTERFACE ===
 st.set_page_config(page_title="Uploader Pole KMZ", layout="centered")
-st.title("📡 Uploader Pole KMZ (CLUSTER + SUBFEEDER + FAT SPLITTER)")
+st.title("📡 WEBGIS AUTO PILOT Pole, FAT, FDT")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -208,3 +208,4 @@ if submit_clicked:
                 append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
         except Exception as e:
             st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
+
