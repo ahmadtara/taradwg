@@ -95,7 +95,44 @@ def extract_kmz_data_combined(kmz_file):
                 recurse_folder(folder, ns)
 
     return folders, poles
+def filter_unique_items(items, key="name"):
+    seen = set()
+    unique = []
+    for item in items:
+        identifier = item.get(key)
+        if identifier and identifier not in seen:
+            unique.append(item)
+            seen.add(identifier)
+    return unique
 
+
+def append_to_sheet(sheet, items, kmz_name, district, subdistrict, vendor, seen_items=None):
+    if seen_items is None:
+        seen_items = set()
+
+    existing_rows = sheet.get_all_values()
+    rows = []
+    template_row = existing_rows[-1] if len(existing_rows) > 1 else []
+
+    for item in items:
+        name = item.get("name")
+        if not name or name in seen_items:
+            continue
+
+        row = [""] * len(template_row)
+        row[0] = name
+        row[1] = name
+        row[3:5] = template_row[3:5]
+        row[20:21] = template_row[20:21]
+        row[24] = datetime.today().strftime("%d/%m/%Y")
+        rows.append(row)
+        seen_items.add(name)
+
+    if rows:
+        sheet.append_rows(rows, value_input_option="USER_ENTERED")
+
+    return len(rows)
+    
 def main():
     st.title("📌 KMZ to Google Sheets - Auto Mapper")
 
@@ -149,5 +186,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
