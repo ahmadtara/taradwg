@@ -72,8 +72,7 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[13:16] = template_row[13:16]
         row[17] = kolom_r
         row[18] = template_row[18]
-        row[24:26] = template_row[24:26]
-        row[27] = template_row[27]
+        row[24:28] = template_row[24:28]
         row[29] = template_row[29]
         row[30] = template_row[30]
         row[40] = template_row[40]
