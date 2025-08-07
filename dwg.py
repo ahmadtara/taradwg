@@ -37,8 +37,18 @@ def extract_kmz_data_combined(kmz_file):
 
     folders = {}
     poles = []
-    subfeeder_cable_data = []  # ✅ Tambahkan baris ini    
     seen_items = set()
+
+    def extract_coords(geometry_tag):
+        coords = []
+        coord_text = geometry_tag.find(".//kml:coordinates", ns)
+        if coord_text is not None:
+            coord_pairs = coord_text.text.strip().split()
+            for pair in coord_pairs:
+                parts = pair.split(",")
+                if len(parts) >= 2:
+                    coords.append((float(parts[0]), float(parts[1])))
+        return coords
     
     def recurse_folder(folder, ns, path=""):
         name_el = folder.find("kml:name", ns)
@@ -52,36 +62,31 @@ def extract_kmz_data_combined(kmz_file):
             name_tag = placemark.find("kml:name", ns)
             name = name_tag.text.strip() if name_tag is not None else ""
 
-            linestring_el = placemark.find(".//kml:LineString", ns)
-            if linestring_el is not None:
-                coords_el = linestring_el.find("kml:coordinates", ns)
-                if coords_el is not None:
-                    coords_text = coords_el.text.strip()
-                    coords = []
-
-                for coord_str in coords_text.split():
-                    lon, lat, *_ = map(float, coord_str.strip().split(","))
-                    x, y = transformer.transform(lon, lat)
-                    coords.append((x, y))
-
-                if len(coords) >= 2:
-                    line = LineString(coords)
-                    length_m = round(line.length, 2)
-
-                    # Simpan hasil ke variabel / dict
-                    subfeeder_cable_data.append({
-                        "name": name,
-                        "coordinates": [(lon, lat) for lon, lat, *_ in 
-                                        [map(float, c.strip().split(",")) for c in coords_text.split()]],
-                        "length_m": length_m
-                    })
-
             coords_tag = placemark.find(".//kml:coordinates", ns)
             coords = coords_tag.text.strip().split(",") if coords_tag is not None and coords_tag.text else ["", ""]
             lon, lat = coords[:2] if len(coords) >= 2 else (None, None)
 
             description_tag = placemark.find("kml:description", ns)
             description = description_tag.text.strip() if description_tag is not None else ""
+
+            lon = lat = None
+            length_m = 0
+
+            point = placemark.find("kml:Point", ns)
+            linestring = placemark.find(".//kml:LineString", ns)
+
+            if point is not None:
+                coord_text = point.find("kml:coordinates", ns)
+                if coord_text is not None:
+                    coords = coord_text.text.strip().split(",")
+                    if len(coords) >= 2:
+                        lon = coords[0]
+                        lat = coords[1]
+            elif linestring is not None:
+                coords = extract_coords(placemark)
+                if len(coords) >= 2:
+                    line = LineString(coords)
+                    length_m = round(line.length, 2)
 
             unique_key = (name, lon, lat, folder_name)
             if unique_key in seen_items:
@@ -95,6 +100,7 @@ def extract_kmz_data_combined(kmz_file):
                 "description": description,
                 "folder": folder_name,
                 "full_path": current_path
+                "length_m": length_m 
             }
 
             folders[folder_name].append(item)
@@ -128,7 +134,7 @@ def extract_kmz_data_combined(kmz_file):
             for folder in root.findall(".//kml:Folder", ns):
                 recurse_folder(folder, ns)
 
-    return folders, poles, subfeeder_cable_data
+    return folders, poles
 
     
 def main():
@@ -155,7 +161,7 @@ def main():
 
         if kmz_fdt_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ FDT..."):
-                folders, poles, subfeeder_cable_data = extract_kmz_data_combined(kmz_fdt_file)
+                folders, poles = extract_kmz_data_combined(kmz_fdt_file)
                 kmz_name = kmz_fdt_file.name.replace(".kmz", "")
                 if client is None:
                     client = authenticate_google()
@@ -170,7 +176,7 @@ def main():
 
         if kmz_subfeeder_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ Subfeeder..."):
-                folders, poles, subfeeder_cable_data = extract_kmz_data_combined(kmz_subfeeder_file)
+                folders, poles = extract_kmz_data_combined(kmz_subfeeder_file)
                 kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
                 if client is None:
                     client = authenticate_google()
@@ -189,6 +195,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
