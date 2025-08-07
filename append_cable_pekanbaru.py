@@ -38,8 +38,6 @@ def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz
             row[16] = match.group(1)
 
         # === Kolom P (index 15): Hitung panjang lintasan (meter) ===
-        # ✅ Kolom P (index 15)
-        # === Kolom P (index 15): ambil dari deskripsi jika ada "Total Route : xxxM" ===
         length_from_desc = ""
         desc_match = re.search(r"Total\s+Route\s*:\s*(\d+)\s*M", description, re.IGNORECASE)
         if desc_match:
