@@ -11,6 +11,7 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
 
     for cable in cable_data:
         name = cable.get("name", "")
+        description = cable.get("description", "") 
         normalized_name = name.upper().replace(" ", "").replace("-", "")
         coords = []
 
@@ -41,7 +42,12 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
 
         # === Kolom P (index 15): Hitung panjang lintasan (meter) ===
         # ✅ Kolom P (index 15)
-        row[15] = cable.get("length_m", "")
+        # === Kolom P (index 15): ambil dari deskripsi jika ada "Total Route : xxxM" ===
+        length_from_desc = ""
+        desc_match = re.search(r"Total\s+Route\s*:\s*(\d+)\s*M", description, re.IGNORECASE)
+        if desc_match:
+            length_from_desc = desc_match.group(1)
+            row[15] = length_from_desc  # gunakan hasil dari deskripsi
 
         rows.append(row)
 
