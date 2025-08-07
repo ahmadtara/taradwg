@@ -32,8 +32,6 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
     all_rows = []
     for pole in poles:
         folder_key = pole['folder'].lower()
-        if folder_key in count_types:
-            count_types[folder_key] += 1
 
 
         row = [""] * len(headers)
