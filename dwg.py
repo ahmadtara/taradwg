@@ -9,6 +9,10 @@ from append_fdt_to_sheet import append_fdt_to_sheet
 from append_cable_pekanbaru import append_cable_pekanbaru
 from append_subfeeder_cable import append_subfeeder_cable
 from datetime import datetime
+from shapely.geometry import LineString
+
+# Ubah koordinat WGS84 ke UTM Zone 60S (EPSG:32760)
+transformer = Transformer.from_crs("epsg:4326", "epsg:32760", always_xy=True)
 
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
 SHEET_NAME_3 = "FDT Pekanbaru"
@@ -183,6 +187,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
