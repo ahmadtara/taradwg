@@ -9,8 +9,6 @@ from append_fdt_to_sheet import append_fdt_to_sheet
 from append_cable_pekanbaru import append_cable_pekanbaru
 from append_subfeeder_cable import append_subfeeder_cable
 from datetime import datetime
-from shapely.geometry import LineString
-from pyproj import Transformer 
 
 
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
@@ -36,19 +34,6 @@ def extract_kmz_data_combined(kmz_file):
     folders = {}
     poles = []
     seen_items = set()
-
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
-    
-    def extract_coords(geometry_tag):
-        coords = []
-        coord_text = geometry_tag.find(".//kml:coordinates", ns)
-        if coord_text is not None:
-            coord_pairs = coord_text.text.strip().split()
-            for pair in coord_pairs:
-                parts = pair.split(",")
-                if len(parts) >= 2:
-                    coords.append((float(parts[0]), float(parts[1])))
-        return coords
     
     def recurse_folder(folder, ns, path=""):
         name_el = folder.find("kml:name", ns)
@@ -68,35 +53,6 @@ def extract_kmz_data_combined(kmz_file):
 
             description_tag = placemark.find("kml:description", ns)
             description = description_tag.text.strip() if description_tag is not None else ""
-
-            lon = lat = None
-            length_m = 0
-
-            point = placemark.find("kml:Point", ns)
-            linestring = placemark.find(".//kml:LineString", ns)
-
-            if point is not None:
-                coord_text = point.find("kml:coordinates", ns)
-                if coord_text is not None:
-                    coords = coord_text.text.strip().split(",")
-                    if len(coords) >= 2:
-                        lon = coords[0]
-                        lat = coords[1]
-
-            elif linestring is not None:
-                coords = extract_coords(placemark)
-                if len(coords) >= 2:
-                    projected_coords = [transformer.transform(lon, lat) for lon, lat in coords]
-                    line = LineString(projected_coords)
-                    length_m = round(line.length, 2)
-        
-                    # Ambil titik tengah sebagai representative (opsional)
-                    mid_index = len(coords) // 2
-                    lon, lat = coords[mid_index]  # gunakan titik tengah garis
-
-                    # Pastikan lon & lat didefinisikan agar tidak error
-            lon = lon if 'lon' in locals() else None
-            lat = lat if 'lat' in locals() else None
 
             unique_key = (name, lon, lat, folder_name)
             if unique_key in seen_items:
@@ -206,5 +162,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
