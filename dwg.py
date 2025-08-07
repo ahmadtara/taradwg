@@ -114,46 +114,52 @@ def main():
     subdistrict = st.text_input("🏙️ Subdistrict")
     vendor = st.text_input("🏗️ Vendor")
 
-    client = None
+    # Tombol submit
+    submit = st.button("🚀 Submit & Kirim ke Spreadsheet")
 
-    count_fdt = 0
-    count_cable = 0
-    count_subfeeder = 0
+    if submit:
+        client = None
+        count_fdt = 0
+        count_cable = 0
+        count_subfeeder = 0
 
-    if kmz_fdt_file and district and subdistrict and vendor:
-        with st.spinner("🔍 Memproses KMZ FDT..."):
-            folders, poles = extract_kmz_data_combined(kmz_fdt_file)
-            kmz_name = kmz_fdt_file.name.replace(".kmz", "")
-            if client is None:
-                client = authenticate_google()
+        if kmz_fdt_file and district and subdistrict and vendor:
+            with st.spinner("🔍 Memproses KMZ FDT..."):
+                folders, poles = extract_kmz_data_combined(kmz_fdt_file)
+                kmz_name = kmz_fdt_file.name.replace(".kmz", "")
+                if client is None:
+                    client = authenticate_google()
 
-            if 'FDT' in folders:
-                sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles, district, subdistrict, vendor, kmz_name)
+                if 'FDT' in folders:
+                    sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
+                    count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles, district, subdistrict, vendor, kmz_name)
 
-            if 'DISTRIBUTION CABLE' in folders:
-                sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
-                count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
+                if 'DISTRIBUTION CABLE' in folders:
+                    sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
+                    count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
 
-    if kmz_subfeeder_file and district and subdistrict and vendor:
-        with st.spinner("🔍 Memproses KMZ Subfeeder..."):
-            folders, _ = extract_kmz_data_combined(kmz_subfeeder_file)
-            kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
-            if client is None:
-                client = authenticate_google()
+        if kmz_subfeeder_file and district and subdistrict and vendor:
+            with st.spinner("🔍 Memproses KMZ Subfeeder..."):
+                folders, _ = extract_kmz_data_combined(kmz_subfeeder_file)
+                kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
+                if client is None:
+                    client = authenticate_google()
 
-            if 'CABLE' in folders:
-                sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
-                count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
+                if 'CABLE' in folders:
+                    sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
+                    count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
 
-    if (kmz_fdt_file or kmz_subfeeder_file) and district and subdistrict and vendor:
-        st.success("✅ Semua data berhasil diproses dan dikirim ke Spreadsheet!")
-        st.info(f"🛰️ {count_fdt} FDT dikirim ke spreadsheet FDT Pekanbaru")
-        st.info(f"📦 {count_cable} kabel distribusi dikirim ke Cable Pekanbaru")
-        st.info(f"🔌 {count_subfeeder} kabel subfeeder dikirim ke Sheet1")
+        if (kmz_fdt_file or kmz_subfeeder_file) and district and subdistrict and vendor:
+            st.success("✅ Semua data berhasil diproses dan dikirim ke Spreadsheet!")
+            st.info(f"🛰️ {count_fdt} FDT dikirim ke spreadsheet FDT Pekanbaru")
+            st.info(f"📦 {count_cable} kabel distribusi dikirim ke Cable Pekanbaru")
+            st.info(f"🔌 {count_subfeeder} kabel subfeeder dikirim ke Sheet1")
+        else:
+            st.warning("⚠️ Mohon lengkapi semua input dan upload file yang diperlukan sebelum Submit.")
 
 if __name__ == "__main__":
     main()
+
 
 
 
