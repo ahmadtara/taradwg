@@ -99,7 +99,7 @@ def extract_kmz_data_combined(kmz_file):
                 "lat": float(lat) if lat else None,
                 "description": description,
                 "folder": folder_name,
-                "full_path": current_path
+                "full_path": current_path,
                 "length_m": length_m 
             }
 
@@ -195,6 +195,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
