@@ -155,7 +155,7 @@ def main():
 
         if kmz_fdt_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ FDT..."):
-                folders, poles = extract_kmz_data_combined(kmz_fdt_file)
+                folders, poles, subfeeder_cable_data = extract_kmz_data_combined(kmz_fdt_file)
                 kmz_name = kmz_fdt_file.name.replace(".kmz", "")
                 if client is None:
                     client = authenticate_google()
@@ -189,6 +189,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
