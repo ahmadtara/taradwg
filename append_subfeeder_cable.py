@@ -46,24 +46,11 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         row[38] = vendor            # Kolom AM
 
         # ===== Kolom J (index 9) =====
-        if "FO24/2T" in normalized_name:
-            row[9] = "2"
-        elif "FO48/4T" in normalized_name:
-            row[9] = "4"
-        elif "FO96/9T" in normalized_name:
-            row[9] = "9"
-        elif "FO12/2T" in normalized_name:
-            row[9] = "12"
-
+        row[9] = cable.get("no_of_tube", "")
+    
         # ===== Kolom M (index 12) =====
-        if "FO24/2T" in normalized_name:
-            row[12] = "24"
-        elif "FO48/4T" in normalized_name:
-            row[12] = "48"
-        elif "FO96/9T" in normalized_name:
-            row[12] = "96"
-        elif "FO12/2T" in normalized_name:
-            row[12] = "12"
+        row[12] = cable.get("total_core", "")
+        
 
         # === Kolom Q (index 16) === Ambil angka setelah AE xxxx M
         match = re.search(r"AE\s*[-]?\s*(\d+)\s*M", name.upper())
