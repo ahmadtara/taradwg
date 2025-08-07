@@ -40,7 +40,7 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
     existing_rows = sheet.get_all_values()
     headers = sheet.row_values(1)
     header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
-    template_row = existing_rows[-1] if len(existing_rows) > 1 else []
+    template_row = existing_rows[-2] if len(existing_rows) > 2 else []
     rows = []
 
     idx_parentid = header_map.get('parentid 1')
