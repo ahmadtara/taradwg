@@ -296,11 +296,11 @@ def main():
     st.markdown("""    ✅ <span style='font-weight:bold;'>CATATAN PENTING :</span><br> """, unsafe_allow_html=True)
 
     st.markdown("""    
-    1️⃣ Deskripsi dari cable distribusi wajib isi : contoh <span style='color:#FF6B6B;'> Total Route : xxxM. </span> <br> 
-    2️⃣ Deskripsi dari cable subfeeder wajib isi : contoh <span style='color:#FF6B6B;'>Total Route : xxxM. </span> <br>
+    ✅ Deskripsi dari cable distribusi wajib isi : contoh <span style='color:#FF6B6B;'> Total Route : xxxM. </span> <br> 
+    ✅ Deskripsi dari cable subfeeder wajib isi : contoh <span style='color:#FF6B6B;'>Total Route : xxxM. </span> <br>
     ✅ Wajib isi sesuai contoh diatas <br>
     ✅ Pastikan .KMZ dari Cluster & Subfeeder yang di upload udah sesuai sama template EMR <br>
-    3️⃣ Nama KMZ Wajib Capital semua dan sesuai dengan nama RFS </span>.<br> 
+    ✅ Nama KMZ Wajib Capital semua dan sesuai dengan nama RFS </span>.<br> 
     ✅ Wajib ikut keterangan karena program mengikuti template tersebut agar berhasil <br>""", unsafe_allow_html=True)
     
     
@@ -416,6 +416,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
