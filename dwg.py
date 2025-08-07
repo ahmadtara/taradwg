@@ -84,7 +84,7 @@ def extract_kmz_data_combined(kmz_file):
                         lat = coords[1]
             elif linestring is not None:
                 coords = extract_coords(placemark)
-                if len(coords) >= 2:
+                if len(coords) >= 2 and folder_name == "CABLE": 
                     # Ubah koordinat (lon, lat) -> (x, y) dalam meter
                     projected_coords = [transformer.transform(lon, lat) for lon, lat in coords]
                     line = LineString(projected_coords)
@@ -197,6 +197,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
