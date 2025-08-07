@@ -85,8 +85,10 @@ def extract_kmz_data_combined(kmz_file):
             elif linestring is not None:
                 coords = extract_coords(placemark)
                 if len(coords) >= 2:
-                    line = LineString(coords)
-                    length_m = round(line.length, 2)
+                    # Ubah koordinat (lon, lat) -> (x, y) dalam meter
+                    projected_coords = [transformer.transform(lon, lat) for lon, lat in coords]
+                    line = LineString(projected_coords)
+                    length_m = round(line.length, 2
 
             unique_key = (name, lon, lat, folder_name)
             if unique_key in seen_items:
@@ -195,6 +197,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
