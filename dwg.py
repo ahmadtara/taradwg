@@ -37,8 +37,9 @@ def extract_kmz_data_combined(kmz_file):
 
     folders = {}
     poles = []
+    subfeeder_cable_data = []  # ✅ Tambahkan baris ini    
     seen_items = set()
-
+    
     def recurse_folder(folder, ns, path=""):
         name_el = folder.find("kml:name", ns)
         folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
@@ -127,7 +128,7 @@ def extract_kmz_data_combined(kmz_file):
             for folder in root.findall(".//kml:Folder", ns):
                 recurse_folder(folder, ns)
 
-    return folders, poles
+    return folders, poles, subfeeder_cable_data
 
     
 def main():
@@ -188,6 +189,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
