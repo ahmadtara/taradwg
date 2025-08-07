@@ -292,7 +292,12 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
     
 def main():
     st.title("🚀 Webgis Teknologia - By. Tara")
-
+    <h2>👋 Hai, <span style='color:#0A84FF'>bro assalamualaikum</span></h2>
+    ✅ <span style='font-weight:bold;'>CATATAN PENTING :</span><br>
+    1️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable distribusi wajib isi : contoh </span> Total Route : 635M.<br>
+    2️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable subfeeder wajib isi : contoh </span> Total Route : 635M.br>
+    3️⃣Pastikanurantan folder kmz cluster dan subfeeder sesuai templateve</span>.<br><br>
+    """, unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         kmz_fdt_file = st.file_uploader("📤 Upload file .kmz Cluster (FDT)", type="kmz", key="fdt")
@@ -405,6 +410,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
