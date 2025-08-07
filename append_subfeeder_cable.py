@@ -15,11 +15,13 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         
         row[0] = name
         row[1] = name
-        row[3] = district
-        row[4] = subdistrict
-        row[20] = vendor
+        row[2:5] = template_row[2:5]
+        row[11] = template_row[11]
+        row[20:21] = template_row[20:21]
+        row[22] = vendor
         row[24] = datetime.today().strftime("%d/%m/%Y")
-        row[29] = kmz_name  # opsional jika Anda ingin mencatat sumber file
+        row[35] = vendor
+        row[36] = kmz_name  # opsional jika Anda ingin mencatat sumber file
 
         rows.append(row)
 
