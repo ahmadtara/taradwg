@@ -3,7 +3,7 @@ from datetime import datetime
 def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     rows = []
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
-    for cable in cable_data:
+    
         row[0] = name
         row[1] = name
         row[3:5] = template_row[3:5]
