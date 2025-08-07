@@ -107,10 +107,15 @@ def filter_unique_items(items, key="name"):
 
 
 def append_to_sheet(sheet, items, kmz_name, district, subdistrict, vendor, seen_items=None):
+    # Ambil semua nama yang sudah ada di kolom pertama sheet
+    existing_rows = sheet.get_all_values()
+    existing_names = set(row[0] for row in existing_rows[1:] if row and row[0])  # Skip header
+
     if seen_items is None:
         seen_items = set()
 
-    existing_rows = sheet.get_all_values()
+    seen_items.update(existing_names)
+
     rows = []
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
 
@@ -132,6 +137,7 @@ def append_to_sheet(sheet, items, kmz_name, district, subdistrict, vendor, seen_
         sheet.append_rows(rows, value_input_option="USER_ENTERED")
 
     return len(rows)
+
     
 def main():
     st.title("📌 KMZ to Google Sheets - Auto Mapper")
@@ -186,6 +192,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
