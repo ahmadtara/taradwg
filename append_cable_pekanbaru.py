@@ -33,9 +33,9 @@ def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz
          #    row[12] = match_fo.group(1)  # Kolom M
         
         # === Kolom Q (index 16) === Ambil angka setelah AE xxxx M
-        match = re.search(r"AE\s*[-]?\s*(\d+)\s*M", name.upper())
-        if match:
-            row[16] = match.group(1)
+        #match = re.search(r"AE\s*[-]?\s*(\d+)\s*M", name.upper())
+        #if match:
+         #   row[16] = match.group(1)
 
         # === Kolom P (index 15): Hitung panjang lintasan (meter) ===
         length_from_desc = ""
