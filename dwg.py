@@ -46,6 +46,30 @@ def extract_kmz_data_combined(kmz_file):
             name_tag = placemark.find("kml:name", ns)
             name = name_tag.text.strip() if name_tag is not None else ""
 
+            linestring_el = placemark.find(".//kml:LineString", ns)
+            if linestring_el is not None:
+                coords_el = linestring_el.find("kml:coordinates", ns)
+                if coords_el is not None:
+                    coords_text = coords_el.text.strip()
+                    coords = []
+
+                for coord_str in coords_text.split():
+                    lon, lat, *_ = map(float, coord_str.strip().split(","))
+                    x, y = transformer.transform(lon, lat)
+                    coords.append((x, y))
+
+                if len(coords) >= 2:
+                    line = LineString(coords)
+                    length_m = round(line.length, 2)
+
+                    # Simpan hasil ke variabel / dict
+                    subfeeder_cable_data.append({
+                        "name": name,
+                        "coordinates": [(lon, lat) for lon, lat, *_ in 
+                                        [map(float, c.strip().split(",")) for c in coords_text.split()]],
+                        "length_m": length_m
+                    })
+
             coords_tag = placemark.find(".//kml:coordinates", ns)
             coords = coords_tag.text.strip().split(",") if coords_tag is not None and coords_tag.text else ["", ""]
             lon, lat = coords[:2] if len(coords) >= 2 else (None, None)
@@ -159,6 +183,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
