@@ -9,6 +9,7 @@ from append_fdt_to_sheet import append_fdt_to_sheet
 from append_cable_pekanbaru import append_cable_pekanbaru
 from append_subfeeder_cable import append_subfeeder_cable
 from datetime import datetime
+import tempfile  # ✅ tambahkan ini
 dist = __import__('math').dist
 
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
@@ -400,3 +401,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
