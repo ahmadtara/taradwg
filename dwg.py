@@ -297,7 +297,6 @@ def main():
     1️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable distribusi wajib isi : contoh </span> Total Route : 635M.<br>
     2️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable subfeeder wajib isi : contoh </span> Total Route : 635M.br>
     3️⃣ Pastikan .KMZ dari CLuster dan Subfeeder yang di upload udah sesuai sama </span>.<br><br>
-    """, unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         kmz_fdt_file = st.file_uploader("📤 Upload file .kmz Cluster (FDT)", type="kmz", key="fdt")
@@ -410,6 +409,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
