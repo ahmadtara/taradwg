@@ -375,6 +375,8 @@ def main():
                     if 'DISTRIBUTION CABLE' in folders:
                         sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
                         count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
+                        cable_names = [item['name'] for item in folders['DISTRIBUTION CABLE'] if item.get('name')]
+                        st.write(cable_names)
 
             if kmz_subfeeder_file:
                 with st.spinner("🔍 Memproses KMZ Subfeeder..."):
@@ -386,6 +388,8 @@ def main():
                     if 'CABLE' in folders:
                         sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
                         count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
+                        cable_names2 = [item['name'] for item in folders['CABLE'] if item.get('name')]
+                        st.write(cable_names2)
 
         # === RINGKASAN HASIL ===
         if (kmz_fdt_file or kmz_subfeeder_file):
@@ -401,5 +405,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
