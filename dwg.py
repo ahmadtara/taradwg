@@ -29,6 +29,7 @@ def authenticate_google():
 def extract_kmz_data_combined(kmz_file):
     import xml.etree.ElementTree as ET
     import zipfile
+    import re
 
     folders = {}
     poles = []
@@ -38,6 +39,14 @@ def extract_kmz_data_combined(kmz_file):
         name_el = folder.find("kml:name", ns)
         folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
         current_path = f"{path}/{folder_name}" if path else folder_name
+
+        match = re.search(r'FO\s*(\d+)C/(\d+)T', current_path.upper())
+        if match:
+            total_core = int(match.group(1))
+            no_of_tube = int(match.group(2))
+        else:
+            total_core = 0
+            no_of_tube = 0
 
         if folder_name not in folders:
             folders[folder_name] = []
@@ -53,6 +62,16 @@ def extract_kmz_data_combined(kmz_file):
             description_tag = placemark.find("kml:description", ns)
             description = description_tag.text.strip() if description_tag is not None else ""
 
+            # Ambil panjang kabel dari name, jika ada
+            length = None
+            if "FO" in name.upper():
+                length_match = re.search(r"(\d+(?:[.,]\d+)?)\s*m", name.lower())
+                if length_match:
+                    try:
+                        length = float(length_match.group(1).replace(",", "."))
+                    except:
+                        pass
+
             unique_key = (name, lon, lat, folder_name)
             if unique_key in seen_items:
                 continue
@@ -64,7 +83,8 @@ def extract_kmz_data_combined(kmz_file):
                 "lat": float(lat) if lat else None,
                 "description": description,
                 "folder": folder_name,
-                "full_path": current_path
+                "full_path": current_path,
+                "length": length  # ← panjang kabel dalam meter (jika ada)
             }
 
             folders[folder_name].append(item)
@@ -159,6 +179,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
