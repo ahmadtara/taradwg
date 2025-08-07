@@ -292,7 +292,7 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
     
 def main():
     st.title("🚀 Webgis Teknologia - By. Tara")
-    <h2>👋 Hai, <span style='color:#0A84FF'>bro assalamualaikum</span></h2>
+    st.markdown("<h2>👋 Hai, <span style='color:#0A84FF'>bro assalamualaikum</span></h2>", unsafe_allow_html=True)
     ✅ <span style='font-weight:bold;'>CATATAN PENTING :</span><br>
     1️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable distribusi wajib isi : contoh </span> Total Route : 635M.<br>
     2️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable subfeeder wajib isi : contoh </span> Total Route : 635M.br>
@@ -409,6 +409,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
