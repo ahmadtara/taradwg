@@ -5,8 +5,7 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
     rows = []
     
     # Template dari baris terakhir
-    template_row = existing_rows[-1] if len(existing_rows) > 1 else [""] * 30
-
+    template_row = existing_rows[-2] if len(existing_rows) > 2 else []
     for cable in cable_data:
         name = cable.get("name", "")  # pastikan 'cable_data' adalah list of dict
 
@@ -20,8 +19,9 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         row[20:21] = template_row[20:21]
         row[22] = vendor
         row[24] = datetime.today().strftime("%d/%m/%Y")
-        row[35] = vendor
+        row[35] = template_row[35]
         row[36] = kmz_name  # opsional jika Anda ingin mencatat sumber file
+        row[38] = vendor
 
         rows.append(row)
 
