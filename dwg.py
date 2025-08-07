@@ -25,7 +25,7 @@ def authenticate_google():
     client = gspread.authorize(credentials)
     return client
 
-def extract_kmz_geometry(kmz_path):
+def extract_kmz_data_combined(kmz_path):
     with zipfile.ZipFile(kmz_path, 'r') as zf:
         kml_filename = [f for f in zf.namelist() if f.endswith('.kml')][0]
         with zf.open(kml_filename) as f:
@@ -72,7 +72,7 @@ def parse_folder(folder):
                 parts = os.path.normpath(path).split(os.sep)
                 for key in folders.keys():
                     if key in parts:
-                        features = extract_kmz_geometry(path)
+                        features = extract_kmz_data_combined(path)
                         for feature in features:
                             folders[key].append({
                                 "name": feature['name'],
@@ -137,6 +137,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
