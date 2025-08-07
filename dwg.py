@@ -30,7 +30,6 @@ def extract_kmz_data_combined(kmz_file):
     poles = []
 
     def recurse_folder(folder, ns, path=""):
-        items = []
         name_el = folder.find("kml:name", ns)
         folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
         new_path = f"{path}/{folder_name}" if path else folder_name
@@ -58,11 +57,10 @@ def extract_kmz_data_combined(kmz_file):
                 "full_path": new_path
             }
 
-            # Tambahkan item ke folder
-            folders[folder_name].append(item)
-            items.append(item)
+            if not any(existing['name'] == item['name'] for existing in folders[folder_name]):
+                folders[folder_name].append(item)
 
-            # Identifikasi pole
+            # Pole identification
             if folder_name == "NEW POLE 7-3":
                 poles.append({**item, "folder": "7m3inch", "height": "7"})
             elif folder_name == "NEW POLE 7-4":
@@ -77,9 +75,7 @@ def extract_kmz_data_combined(kmz_file):
                 poles.append({**item, "folder": "ext9m4inch", "height": "9"})
 
         for subfolder in folder.findall("kml:Folder", ns):
-            items += recurse_folder(subfolder, ns, new_path)
-
-        return items
+            recurse_folder(subfolder, ns, new_path)
 
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
@@ -94,7 +90,12 @@ def extract_kmz_data_combined(kmz_file):
             for folder in root.findall(".//kml:Folder", ns):
                 recurse_folder(folder, ns)
 
+    # Unifikasi poles agar tidak duplikat
+    poles = filter_unique_items(poles, key="name")
+
     return folders, poles
+
+
 def filter_unique_items(items, key="name"):
     seen = set()
     unique = []
@@ -107,15 +108,10 @@ def filter_unique_items(items, key="name"):
 
 
 def append_to_sheet(sheet, items, kmz_name, district, subdistrict, vendor, seen_items=None):
-    # Ambil semua nama yang sudah ada di kolom pertama sheet
-    existing_rows = sheet.get_all_values()
-    existing_names = set(row[0] for row in existing_rows[1:] if row and row[0])  # Skip header
-
     if seen_items is None:
         seen_items = set()
 
-    seen_items.update(existing_names)
-
+    existing_rows = sheet.get_all_values()
     rows = []
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
 
@@ -192,6 +188,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
