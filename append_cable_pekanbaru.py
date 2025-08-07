@@ -1,5 +1,6 @@
-from datetime import datetime
 import re
+from datetime import datetime
+
 
 def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
@@ -27,7 +28,8 @@ def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz
         row[35] = template_row[35]  # Kolom AJ
         row[36] = kmz_name          # Kolom AK
         row[38] = vendor            # Kolom AM
-         match_fo = re.search(r"\(FO\s*(\d+)C/(\d+)T\)", row[0].upper())
+        
+        match_fo = re.search(r"\(FO\s*(\d+)C/(\d+)T\)", row[0].upper())
         if match_fo:
             row[9] = match_fo.group(2)   # Kolom J
             row[12] = match_fo.group(1)  # Kolom M
