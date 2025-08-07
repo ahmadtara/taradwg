@@ -296,9 +296,9 @@ def main():
     st.markdown("""    ✅ <span style='font-weight:bold;'>CATATAN PENTING :</span><br> """, unsafe_allow_html=True)
 
     st.markdown("""    
-    1️⃣ Deskripsi dari cable distribusi wajib isi : contoh <span style='color:#FF6B6B;'> Total Route : 635M. </span> <br> 
-    2️⃣ Deskripsi dari cable subfeeder wajib isi : contoh <span style='color:#FF6B6B;'>Total Route : 635M. </span> <br> 
-    3️⃣ Pastikan .KMZ dari CLuster dan Subfeeder yang di upload udah sesuai sama </span>.<br><br> """, unsafe_allow_html=True)
+    1️⃣ Deskripsi dari cable distribusi wajib isi : contoh <span style='color:#FF6B6B;'> Total Route : xxxM. </span> <br> 
+    2️⃣ Deskripsi dari cable subfeeder wajib isi : contoh <span style='color:#FF6B6B;'>Total Route : xxxM. </span> <br> 
+    3️⃣ Wajib isi sesuai contoh diatas & pastikan .KMZ dari CLuster dan Subfeeder yang di upload udah sesuai sama template EMR</span>.<br><br> """, unsafe_allow_html=True)
     
     
     col1, col2 = st.columns(2)
@@ -413,6 +413,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
