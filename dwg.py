@@ -294,11 +294,11 @@ def main():
     st.title("🚀 Webgis Teknologia - By. Tara")
     st.markdown("<h2>👋 Hai, <span style='color:#0A84FF'>bro assalamualaikum</span></h2>", unsafe_allow_html=True)
     ✅ <span style='font-weight:bold;'>CATATAN PENTING :</span><br>
-    st.markdown("""
-    1️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable distribusi wajib isi : contoh </span> Total Route : 635M.<br>
-    2️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable subfeeder wajib isi : contoh </span> Total Route : 635M.br>
-    3️⃣ Pastikan .KMZ dari CLuster dan Subfeeder yang di upload udah sesuai sama </span>.<br><br>
-    """, unsafe_allow_html=True)
+
+    st.markdown("""    1️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable distribusi wajib isi : contoh </span> Total Route : 635M.<br> """, unsafe_allow_html=True)
+    st.markdown("""    2️⃣ <span style='color:#FF6B6B;'>Deskripsi dari cable subfeeder wajib isi : contoh </span> Total Route : 635M.br> """, unsafe_allow_html=True)
+    st.markdown("""    3️⃣ Pastikan .KMZ dari CLuster dan Subfeeder yang di upload udah sesuai sama </span>.<br><br> """, unsafe_allow_html=True)
+    
     
     col1, col2 = st.columns(2)
     with col1:
@@ -412,6 +412,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
