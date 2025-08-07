@@ -88,7 +88,7 @@ def extract_kmz_data_combined(kmz_file):
                     # Ubah koordinat (lon, lat) -> (x, y) dalam meter
                     projected_coords = [transformer.transform(lon, lat) for lon, lat in coords]
                     line = LineString(projected_coords)
-                    length_m = round(line.length, 2
+                    length_m = round(line.length, 2)
 
             unique_key = (name, lon, lat, folder_name)
             if unique_key in seen_items:
@@ -197,6 +197,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
