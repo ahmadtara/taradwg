@@ -73,4 +73,4 @@ def append_fat_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor)
         all_rows.append(row)
 
     sheet.append_rows(all_rows)
-    st.success(f"✅ {len(fat_points)} FAT berhasil dikirim ke Spreadsheet ke-2 🛰️")
+    st.success(f"✅ {len(fat_points)} FAT")
