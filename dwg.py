@@ -96,6 +96,24 @@ def extract_kmz_data_combined(kmz_file):
         for subfolder in folder.findall("kml:Folder", ns):
             recurse_folder(subfolder, ns, current_path)
 
+    def extract_points_from_kmz(kmz_path):
+    fat_points, poles, poles_subfeeder = [], [], []
+
+    def recurse_folder(folder, ns, path=""):
+        items = []
+        name_el = folder.find("kml:name", ns)
+        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
+        new_path = f"{path}/{folder_name}" if path else folder_name
+        for sub in folder.findall("kml:Folder", ns):
+            items += recurse_folder(sub, ns, new_path)
+        for pm in folder.findall("kml:Placemark", ns):
+            nm = pm.find("kml:name", ns)
+            coord = pm.find(".//kml:coordinates", ns)
+            if nm is not None and coord is not None and ',' in coord.text:
+                lon, lat = coord.text.strip().split(",")[:2]
+                items.append({"name": nm.text.strip(), "lat": float(lat), "lon": float(lon), "path": new_path})
+        return items
+
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
         if not kml_filename:
@@ -108,8 +126,35 @@ def extract_kmz_data_combined(kmz_file):
 
             for folder in root.findall(".//kml:Folder", ns):
                 recurse_folder(folder, ns)
+            root = ET.parse(zf.open(kml_file)).getroot()
+        ns = {"kml": "http://www.opengis.net/kml/2.2"}
+        all_pm = []
+        for folder in root.findall(".//kml:Folder", ns):
+            all_pm += recurse_folder(folder, ns)
 
-    return folders, poles
+    for p in all_pm:
+        base_folder = p["path"].split("/")[0].upper()
+        if base_folder == "FAT":
+            fat_points.append(p)
+        elif base_folder == "NEW POLE 7-3":
+            poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
+            poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
+        elif base_folder == "NEW POLE 7-4":
+            poles.append({**p, "folder": "7m4inch", "height": "7"})
+        elif base_folder == "NEW POLE 9-4":
+            poles.append({**p, "folder": "9m4inch", "height": "9"})
+
+    return fat_points, poles, poles_subfeeder
+
+def find_nearest_pole(fat_point, poles):
+    min_dist = float('inf')
+    nearest_name = ""
+    for pole in poles:
+        d = dist([fat_point['lat'], fat_point['lon']], [pole['lat'], pole['lon']])
+        if d < min_dist:
+            min_dist = d
+            nearest_name = pole['name']
+    return nearest_name
 
 def main():
     st.title("📌 KMZ to Google Sheets - Auto Mapper")
@@ -195,3 +240,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
