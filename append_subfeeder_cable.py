@@ -1,9 +1,11 @@
 import re
 from datetime import datetime
-from pyproj import Geod
+from pyproj import Transformer
+from shapely.geometry import LineString
 
-# Inisialisasi Geod WGS84
-geod = Geod(ellps="WGS84")
+# Ubah koordinat WGS84 ke UTM Zone 60S (EPSG:32760)
+transformer = Transformer.from_crs("epsg:4326", "epsg:32760", always_xy=True)
+
 
 def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
@@ -17,18 +19,22 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         normalized_name = name.upper().replace(" ", "").replace("-", "")
         coords = []
 
-        # Ambil koordinat dari LineString geometry
-        if "geometry" in cable and hasattr(cable["geometry"], "coords"):
-            coords = list(cable["geometry"].coords)
+        # Di dalam loop placemark
+        linestring_el = placemark.find(".//kml:LineString", ns)
+        if linestring_el is not None:
+            coords_el = linestring_el.find("kml:coordinates", ns)
+            if coords_el is not None:
+                coords_text = coords_el.text.strip()
+                coords = []
+                    for coord_str in coords_text.split():
+                    lon, lat, *_ = map(float, coord_str.strip().split(","))
+                    x, y = transformer.transform(lon, lat)
+                    coords.append((x, y))
 
-        # Hitung panjang lintasan
-        length = 0
-        if coords and len(coords) > 1:
-            for i in range(len(coords) - 1):
-                lon1, lat1 = coords[i]
-                lon2, lat2 = coords[i + 1]
-                segment_length = geod.inverse(lon1, lat1, lon2, lat2)[2]
-                length += segment_length
+                    if len(coords) >= 2:
+                        line = LineString(coords)
+                        length_m = round(line.length, 2)
+                        row[15] = length_m  # Kolom P
 
         # Siapkan baris baru dengan panjang template
         row = [""] * len(template_row)
