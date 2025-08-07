@@ -291,7 +291,7 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
 """)
     
 def main():
-    st.title("📌 KMZ to Google Sheets - Auto Mapper")
+    st.title("🚀 Webgis Teknologia - By. Tara")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -405,6 +405,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
