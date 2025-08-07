@@ -27,23 +27,6 @@ def append_cable_pekanbaru(sheet, cable_data, district, subdistrict, vendor, kmz
         row[36] = kmz_name          # Kolom AK
         row[38] = vendor            # Kolom AM
 
-       #  match_fo = re.search(r"\(FO\s*(\d+)C/(\d+)T\)", row[0].upper())
-        # if match_fo:
-        #     row[9] = match_fo.group(2)   # Kolom J
-         #    row[12] = match_fo.group(1)  # Kolom M
-        
-        # === Kolom Q (index 16) === Ambil angka setelah AE xxxx M
-        #match = re.search(r"AE\s*[-]?\s*(\d+)\s*M", name.upper())
-        #if match:
-         #   row[16] = match.group(1)
-
-        # === Kolom P (index 15): Hitung panjang lintasan (meter) ===
-        length_from_desc = ""
-        desc_match = re.search(r"Total\s+Route\s*:\s*(\d+)\s*M", description, re.IGNORECASE)
-        if desc_match:
-            length_from_desc = desc_match.group(1)
-            row[15] = length_from_desc  # gunakan hasil dari deskripsi
-
         rows.append(row)
 
     if rows:
