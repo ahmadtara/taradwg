@@ -1,4 +1,8 @@
 from datetime import datetime
+from pyproj import Geod
+
+# Hitung panjang lintasan berdasarkan koordinat
+geod = Geod(ellps="WGS84")
 
 def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
@@ -7,8 +11,22 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
     # Template dari baris terakhir
     template_row = existing_rows[-2] if len(existing_rows) > 2 else []
     for cable in cable_data:
-        name = cable.get("name", "")  # pastikan 'cable_data' adalah list of dict
+    name = cable.get("name", "")
+    coords = []
+    # Ambil koordinat dari geometry LineString
+    # Ambil koordinat dari geometry LineString
+    if "geometry" in cable and hasattr(cable["geometry"], "coords"):
+        coords = list(cable["geometry"].coords)
 
+    length = 0
+    if coords and len(coords) > 1:
+        # Hitung total panjang lintasan
+        for i in range(len(coords) - 1):
+            lon1, lat1 = coords[i]
+            lon2, lat2 = coords[i + 1]
+            segment_length = geod.inverse(lon1, lat1, lon2, lat2)[2]  # hasil dalam meter
+            length += segment_length
+            
         # Buat row kosong sesuai panjang baris template
         row = [""] * len(template_row)
         
@@ -42,28 +60,13 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
             row[12] = "96"
 
         # ===== Kolom Q (index 16) =====
-        match = re.search(r"AE[\s\-]*([0-9]+)[\s]*M", name.upper())
+        match = re.search(r"AE\s*[-]?\s*(\d+)\s*M", name.upper())
         if match:
-            row[16] = match.group(1)
+            ae_number = match.group(1)
+            row[16] = ae_number  # Kolom Q
 
         # ===== Kolom P (index 15) - panjang lintasan =====
-        if "path" in cable:
-            path = cable["path"]
-            if isinstance(path, list) and len(path) >= 2:
-                total_distance = 0
-                for i in range(1, len(path)):
-                    lat1, lon1 = path[i-1]
-                    lat2, lon2 = path[i]
-                    # Rumus haversine sederhana (flat approximation, cukup presisi untuk city scale)
-                    from math import radians, sin, cos, sqrt, atan2
-                    R = 6371000  # Earth radius in meter
-                    dlat = radians(lat2 - lat1)
-                    dlon = radians(lon2 - lon1)
-                    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-                    c = 2 * atan2(sqrt(a), sqrt(1-a))
-                    distance = R * c
-                    total_distance += distance
-                row[15] = round(total_distance)
+        row[15] = str(round(length, 2))
 
         rows.append(row)
 
