@@ -302,98 +302,101 @@ def main():
     subdistrict = st.text_input("🏙️ Subdistrict")
     vendor = st.text_input("🏗️ Vendor")
 
-    # Tombol submit
     submit = st.button("🚀 Submit & Kirim ke Spreadsheet")
 
     if submit:
+        if not district or not subdistrict or not vendor:
+            st.warning("⚠️ Harap isi semua kolom input manual.")
+            return
+
         client = None
         count_fdt = 0
         count_cable = 0
         count_subfeeder = 0
 
-        if not district_input or not subdistrict_input or not vendor_input:
-        st.warning("⚠️ Harap isi semua kolom input manual.")
-    elif not uploaded_cluster:
-        st.warning("⚠️ Harap upload file KMZ CLUSTER.")
-    else:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
-            tmp.write(uploaded_cluster.read())
-            kmz_path = tmp.name
+        # === PROSES CLUSTER (FAT + POLE 7m3) ===
+        if kmz_fdt_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+                tmp.write(kmz_fdt_file.read())
+                kmz_path = tmp.name
 
-        with st.spinner("🔍 Membaca data dari KMZ CLUSTER..."):
-            fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path)
+            with st.spinner("🔍 Membaca data dari KMZ CLUSTER..."):
+                fat_points, poles_cluster, poles_subfeeder = extract_points_from_kmz(kmz_path)
 
-        try:
-            client = authenticate_google()
-            sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-            if poles_cluster:
-                append_poles_to_main_sheet(sheet1, poles_cluster, district_input, subdistrict_input, vendor_input)
-        except Exception as e:
-            st.error(f"❌ Gagal mengirim ke spreadsheet utama: {e}")
-
-        if fat_points:
             try:
-                sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
-                append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district_input, subdistrict_input, vendor_input)
+                client = authenticate_google()
+                sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
+                if poles_cluster:
+                    append_poles_to_main_sheet(sheet1, poles_cluster, district, subdistrict, vendor)
             except Exception as e:
-                st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
-        else:
-            st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
+                st.error(f"❌ Gagal mengirim ke spreadsheet utama: {e}")
 
-    if uploaded_subfeeder:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
-            tmp.write(uploaded_subfeeder.read())
-            kmz_path = tmp.name
+            if fat_points:
+                try:
+                    sheet2 = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
+                    append_fat_to_sheet(sheet2, fat_points, poles_subfeeder, district, subdistrict, vendor)
+                except Exception as e:
+                    st.error(f"❌ Gagal mengirim ke spreadsheet kedua: {e}")
+            else:
+                st.warning("⚠️ Tidak ditemukan folder FAT dalam file KMZ.")
 
-        with st.spinner("🔍 Membaca data dari KMZ SUBFEEDER..."):
-            _, poles_subonly, _ = extract_points_from_kmz(kmz_path)
+        # === PROSES SUBFEEDER ===
+        if kmz_subfeeder_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".kmz") as tmp:
+                tmp.write(kmz_subfeeder_file.read())
+                kmz_path = tmp.name
 
-        try:
-            client = authenticate_google()
-            sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-            if poles_subonly:
-                append_poles_to_main_sheet(sheet1, poles_subonly, district_input, subdistrict_input, vendor_input)
-        except Exception as e:
-            st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
+            with st.spinner("🔍 Membaca data dari KMZ SUBFEEDER..."):
+                _, poles_subonly, _ = extract_points_from_kmz(kmz_path)
 
-        if kmz_fdt_file and district and subdistrict and vendor:
-            with st.spinner("🔍 Memproses KMZ FDT..."):
-                folders, poles = extract_kmz_data_combined(kmz_fdt_file)
-                kmz_name = kmz_fdt_file.name.replace(".kmz", "")
+            try:
                 if client is None:
                     client = authenticate_google()
+                sheet1 = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
+                if poles_subonly:
+                    append_poles_to_main_sheet(sheet1, poles_subonly, district, subdistrict, vendor)
+            except Exception as e:
+                st.error(f"❌ Gagal mengirim data SUBFEEDER ke spreadsheet utama: {e}")
 
-                if 'FDT' in folders:
-                    sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                    count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles, district, subdistrict, vendor, kmz_name)
+        # === PROSES FDT & CABLE ===
+        if (kmz_fdt_file or kmz_subfeeder_file):
+            if kmz_fdt_file:
+                with st.spinner("🔍 Memproses KMZ FDT..."):
+                    folders, poles = extract_kmz_data_combined(kmz_fdt_file)
+                    kmz_name = kmz_fdt_file.name.replace(".kmz", "")
+                    if client is None:
+                        client = authenticate_google()
 
-                if 'DISTRIBUTION CABLE' in folders:
-                    sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
-                    count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
+                    if 'FDT' in folders:
+                        sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
+                        count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles, district, subdistrict, vendor, kmz_name)
 
-        if kmz_subfeeder_file and district and subdistrict and vendor:
-            with st.spinner("🔍 Memproses KMZ Subfeeder..."):
-                folders, poles = extract_kmz_data_combined(kmz_subfeeder_file)
-                kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
-                if client is None:
-                    client = authenticate_google()
+                    if 'DISTRIBUTION CABLE' in folders:
+                        sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
+                        count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
 
-                if 'CABLE' in folders:
-                    sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
-                    count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
+            if kmz_subfeeder_file:
+                with st.spinner("🔍 Memproses KMZ Subfeeder..."):
+                    folders, poles = extract_kmz_data_combined(kmz_subfeeder_file)
+                    kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
+                    if client is None:
+                        client = authenticate_google()
 
-        if (kmz_fdt_file or kmz_subfeeder_file) and district and subdistrict and vendor:
+                    if 'CABLE' in folders:
+                        sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
+                        count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
+
+        # === RINGKASAN HASIL ===
+        if (kmz_fdt_file or kmz_subfeeder_file):
             st.success("✅ Semua data berhasil diproses dan dikirim ke Spreadsheet!")
-            st.info(f"🛰️ {count_fdt} FDT dikirim ke spreadsheet FDT Pekanbaru")
-            st.info(f"📦 {count_cable} kabel distribusi dikirim ke Cable Pekanbaru")
-            st.info(f"🔌 {count_subfeeder} kabel subfeeder dikirim ke Sheet1")
+            if count_fdt:
+                st.info(f"🛰️ {count_fdt} FDT dikirim ke spreadsheet FDT Pekanbaru")
+            if count_cable:
+                st.info(f"📦 {count_cable} kabel distribusi dikirim ke Cable Pekanbaru")
+            if count_subfeeder:
+                st.info(f"🔌 {count_subfeeder} kabel subfeeder dikirim ke Sheet1")
         else:
-            st.warning("⚠️ Mohon lengkapi semua input dan upload file yang diperlukan sebelum Submit.")
+            st.warning("⚠️ Mohon upload minimal satu file KMZ CLUSTER atau SUBFEEDER.")
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
