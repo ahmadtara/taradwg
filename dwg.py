@@ -25,64 +25,90 @@ def authenticate_google():
     client = gspread.authorize(credentials)
     return client
 
-def extract_data_from_kmz(kmz_file):
-    def parse_folder(folder_element, ns, folder_path=""):
-        folder_name_el = folder_element.find("kml:name", ns)
-        folder_name = folder_name_el.text.strip() if folder_name_el is not None else "Unknown"
-        full_folder_path = f"{folder_path}/{folder_name}" if folder_path else folder_name
+def extract_kmz_data_combined(kmz_file):
+    folders = {}
+    poles = []
 
-        placemarks = []
-        for placemark in folder_element.findall("kml:Placemark", ns):
-            name = placemark.find("kml:name", ns)
-            name = name.text.strip() if name is not None else ""
+    def recurse_folder(folder, ns, path=""):
+        items = []
+        name_el = folder.find("kml:name", ns)
+        folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
+        new_path = f"{path}/{folder_name}" if path else folder_name
+
+        # Tambahkan folder ke dictionary utama
+        if folder_name not in folders:
+            folders[folder_name] = []
+
+        # Cek semua placemark di folder ini
+        for placemark in folder.findall("kml:Placemark", ns):
+            name_tag = placemark.find("kml:name", ns)
+            name = name_tag.text.strip() if name_tag is not None else ""
 
             coords_tag = placemark.find(".//kml:coordinates", ns)
-            coords = coords_tag.text.strip() if coords_tag is not None else ""
-            coords = coords.split(",") if coords else ["", "", ""]
+            coords = coords_tag.text.strip().split(",") if coords_tag is not None and coords_tag.text else ["", ""]
+            lon, lat = coords[:2] if len(coords) >= 2 else ("", "")
 
             description_tag = placemark.find("kml:description", ns)
             description = description_tag.text.strip() if description_tag is not None else ""
 
-            placemarks.append({
-                'name': name,
-                'lon': coords[0],
-                'lat': coords[1],
-                'alt': coords[2] if len(coords) > 2 else "",
-                'description': description,
-                'folder': full_folder_path.split("/")[-1],
-                'full_path': full_folder_path
-            })
+            item = {
+                "name": name,
+                "lon": float(lon) if lon else None,
+                "lat": float(lat) if lat else None,
+                "description": description,
+                "folder": folder_name,
+                "full_path": new_path
+            }
 
-        for subfolder in folder_element.findall("kml:Folder", ns):
-            placemarks.extend(parse_folder(subfolder, ns, full_folder_path))
+            folders[folder_name].append(item)
+            items.append(item)
 
-        return placemarks
+            # Deteksi jenis tiang dari folder_name
+            if folder_name == "NEW POLE 7-3":
+                poles.append({**item, "folder": "7m3inch", "height": "7"})
+            elif folder_name == "NEW POLE 7-4":
+                poles.append({**item, "folder": "7m4inch", "height": "7"})
+            elif folder_name == "NEW POLE 9-4":
+                poles.append({**item, "folder": "9m4inch", "height": "9"})
+            elif folder_name == "EXISTING POLE EMR 7-3":
+                poles.append({**item, "folder": "ext7m3inch", "height": "7"})
+            elif folder_name == "EXISTING POLE EMR 7-4":
+                poles.append({**item, "folder": "ext7m4inch", "height": "7"})
+            elif folder_name == "EXISTING POLE EMR 9-4":
+                poles.append({**item, "folder": "ext9m4inch", "height": "9"})
 
-    folders = {}
-    new_pole_found = False
+        # Rekursi ke subfolder
+        for subfolder in folder.findall("kml:Folder", ns):
+            items += recurse_folder(subfolder, ns, new_path)
+
+        return items
+
+    # Buka KMZ dan parse file KML di dalamnya
     with zipfile.ZipFile(kmz_file, 'r') as z:
-        kml_filename = [f for f in z.namelist() if f.endswith('.kml')][0]
+        kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
+        if not kml_filename:
+            raise ValueError("❌ Tidak ditemukan file .kml dalam .kmz")
+
         with z.open(kml_filename) as kml_file:
             tree = ET.parse(kml_file)
             root = tree.getroot()
-
             ns = {'kml': 'http://www.opengis.net/kml/2.2'}
+
+            # Telusuri semua Folder utama
             for folder in root.findall(".//kml:Folder", ns):
-                folder_name_el = folder.find("kml:name", ns)
-                folder_name = folder_name_el.text.strip() if folder_name_el is not None else "Unknown"
-                placemarks = parse_folder(folder, ns)
-                if folder_name not in folders:
-                    folders[folder_name] = []
-                folders[folder_name].extend(placemarks)
-                if folder_name.upper().startswith("NEW POLE") and placemarks:
-                    new_pole_found = True
+                recurse_folder(folder, ns)
 
-    if not new_pole_found:
-        st.warning("⚠️ Tidak ditemukan titik tiang di folder yang diawali dengan 'NEW POLE' dalam KMZ.")
-    else:
-        st.success("✅ Titik tiang dari folder 'NEW POLE' berhasil ditemukan dalam KMZ.")
-
-    return folders
+    return folders, poless
+    
+def find_nearest_pole(fdt_point, poles):
+    min_dist = float('inf')
+    nearest_name = ""
+    for pole in poles:
+        d = dist([fdt_point['lat'], fdt_point['lon']], [pole['lat'], pole['lon']])
+        if d < min_dist:
+            min_dist = d
+            nearest_name = pole['name']
+    return nearest_name
 
 def templatecode_to_kolom_m(templatecode):
     mapping = {
@@ -115,16 +141,10 @@ def is_float(value):
     except (TypeError, ValueError):
         return False
 
-def find_nearest_pole(fdt_point, poles):
-    valid_poles = [p for p in poles if is_float(p['lat']) and is_float(p['lon'])]
-    if not valid_poles:
-        return ''
-    closest = min(valid_poles, key=lambda p: dist([float(fdt_point['lat']), float(fdt_point['lon'])], [float(p['lat']), float(p['lon'])]))
-    return closest['name']
-
 def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
-    header_map = {header.lower(): idx for idx, header in enumerate(existing_rows[0])}
+    headers = sheet.row_values(1)
+    header_map = {name.strip().lower(): i for i, name in enumerate(headers)}
     template_row = existing_rows[-1] if len(existing_rows) > 1 else []
     rows = []
 
@@ -167,7 +187,11 @@ def append_fdt_to_sheet(sheet, fdt_data, poles, district, subdistrict, vendor, k
         row[31] = vendor
         row[44] = vendor
 
-        row[idx_parentid] = find_nearest_pole(fdt, [p for p in poles if p['folder'] == 'NEW POLE 7-4'])
+        idx_an = header_map.get('parentid 1')
+        if idx_an is not None:
+            row[idx_an] = find_nearest_pole(fdt, [
+                p for p in poles if p['folder'] in ['7m4inch', '7m3inch', 'ext7m3inch', 'ext7m4inch', 'ext9m4inch']
+            ])
 
         rows.append(row)
 
@@ -231,20 +255,20 @@ def main():
 
     if kmz_fdt_file and district and subdistrict and vendor:
         with st.spinner("🔍 Memproses KMZ FDT..."):
-            folders = extract_data_from_kmz(kmz_fdt_file)
+            folders = extract_kmz_data_combined(kmz_fdt_file)
             kmz_name = kmz_fdt_file.name.replace(".kmz", "")
             if client is None:
                 client = authenticate_google()
 
-            poles_7_4 = folders.get("NEW POLE 7-4", [])
-            if poles_7_4:
-                st.success(f"✅ {len(poles_7_4)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
+            poles = folders.get("NEW POLE 7-4", [])
+            if poles:
+                st.success(f"✅ {len(poles)} titik tiang dari 'NEW POLE 7-4' berhasil diambil.")
             else:
                 st.warning("⚠️ Tidak ditemukan titik tiang di folder 'NEW POLE 7-4' dalam KMZ.")
 
             if 'FDT' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_3).worksheet(SHEET_NAME_3)
-                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles_7_4, district, subdistrict, vendor, kmz_name)
+                count_fdt = append_fdt_to_sheet(sheet, folders['FDT'], poles, district, subdistrict, vendor, kmz_name)
 
             if 'DISTRIBUTION CABLE' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
@@ -252,14 +276,14 @@ def main():
 
     if kmz_subfeeder_file and district and subdistrict and vendor:
         with st.spinner("🔍 Memproses KMZ Subfeeder..."):
-            folders = extract_data_from_kmz(kmz_subfeeder_file)
+            folders = extract_kmz_data_combined(kmz_subfeeder_file)
             kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
             if client is None:
                 client = authenticate_google()
 
-            if 'SUBFEEDER CABLE' in folders:
+            if 'CABLE' in folders:
                 sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
-                count_subfeeder = append_subfeeder_cable(sheet, folders['SUBFEEDER CABLE'], district, subdistrict, vendor, kmz_name)
+                count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
 
     if (kmz_fdt_file or kmz_subfeeder_file) and district and subdistrict and vendor:
         st.success("✅ Semua data berhasil diproses dan dikirim ke Spreadsheet!")
@@ -269,4 +293,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
