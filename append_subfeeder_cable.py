@@ -19,23 +19,6 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         normalized_name = name.upper().replace(" ", "").replace("-", "")
         coords = []
 
-        # Di dalam loop placemark
-        linestring_el = placemark.find(".//kml:LineString", ns)
-        if linestring_el is not None:
-            coords_el = linestring_el.find("kml:coordinates", ns)
-            if coords_el is not None:
-                coords_text = coords_el.text.strip()
-                coords = []
-                    for coord_str in coords_text.split():
-                    lon, lat, *_ = map(float, coord_str.strip().split(","))
-                    x, y = transformer.transform(lon, lat)
-                    coords.append((x, y))
-
-                    if len(coords) >= 2:
-                        line = LineString(coords)
-                        length_m = round(line.length, 2)
-                        row[15] = length_m  # Kolom P
-
         # Siapkan baris baru dengan panjang template
         row = [""] * len(template_row)
         row[0] = name
@@ -63,8 +46,17 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         if match:
             row[16] = match.group(1)
 
-        # === Kolom P (index 15) === Isi panjang lintasan (dalam meter)
-        row[15] = str(round(length, 2))
+        # === Kolom P (index 15): Hitung panjang lintasan (meter) ===
+        coords = cable.get("coordinates", [])
+        if coords and len(coords) >= 2:
+            utm_coords = []
+            for lon, lat in coords:
+                x, y = transformer.transform(lon, lat)
+                utm_coords.append((x, y))
+            line = LineString(utm_coords)
+            row[15] = round(line.length, 2)
+        else:
+            row[15] = "")
 
         rows.append(row)
 
