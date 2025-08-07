@@ -8,10 +8,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 from append_fdt_to_sheet import append_fdt_to_sheet
 from append_cable_pekanbaru import append_cable_pekanbaru
 from append_subfeeder_cable import append_subfeeder_cable
-from append_fat_to_sheet import append_fat_to_sheet
-from append_poles_to_main_sheet import append_poles_to_main_sheet
 from datetime import datetime
-import tempfile
+
 
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
 SHEET_NAME_3 = "FDT Pekanbaru"
@@ -22,17 +20,6 @@ SHEET_NAME_4 = "Cable Pekanbaru"
 SPREADSHEET_ID_5 = "1paa8sT3nTZh_xxwHeKV8pwVIWacq7lC8U9A8BlX6LUw"
 SHEET_NAME_5 = "Sheet1"
 
-SPREADSHEET_ID = "1yXBIuX2LjUWxbpnNqf6A9YimtG7d77V_AHLidhWKIS8"
-SHEET_NAME = "Pole Pekanbaru"
-
-SPREADSHEET_ID_2 = "1WI0Gb8ul5GPUND4ADvhFgH4GSlgwq1_4rRgfOnPz-yc"
-SHEET_NAME_2 = "FAT Pekanbaru"
-
-_cached_headers = None
-_cached_prev_row = None
-
-dist = __import__('math').dist
-
 def authenticate_google():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -41,10 +28,13 @@ def authenticate_google():
     return client
 
 def extract_kmz_data_combined(kmz_file):
+    import xml.etree.ElementTree as ET
+    import zipfile
+
     folders = {}
     poles = []
     seen_items = set()
-
+    
     def recurse_folder(folder, ns, path=""):
         name_el = folder.find("kml:name", ns)
         folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
@@ -96,47 +86,36 @@ def extract_kmz_data_combined(kmz_file):
         for subfolder in folder.findall("kml:Folder", ns):
             recurse_folder(subfolder, ns, current_path)
 
-    with zipfile.ZipFile(kmz_file, 'r') as zf:
-        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
-        if not kml_file:
-            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
-            return {}, []
+    with zipfile.ZipFile(kmz_file, 'r') as z:
+        kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
+        if not kml_filename:
+            raise ValueError("❌ Tidak ditemukan file .kml dalam .kmz")
 
-        root = ET.parse(zf.open(kml_file)).getroot()
-        ns = {"kml": "http://www.opengis.net/kml/2.2"}
+        with z.open(kml_filename) as kml_file:
+            tree = ET.parse(kml_file)
+            root = tree.getroot()
+            ns = {'kml': 'http://www.opengis.net/kml/2.2'}
 
-        for folder in root.findall(".//kml:Folder", ns):
-            recurse_folder(folder, ns)
+            for folder in root.findall(".//kml:Folder", ns):
+                recurse_folder(folder, ns)
 
     return folders, poles
 
-def find_nearest_pole(fat_point, poles):
-    min_dist = float('inf')
-    nearest_name = ""
-    for pole in poles:
-        d = dist([fat_point['lat'], fat_point['lon']], [pole['lat'], pole['lon']])
-        if d < min_dist:
-            min_dist = d
-            nearest_name = pole['name']
-    return nearest_name
-
+    
 def main():
     st.title("📌 KMZ to Google Sheets - Auto Mapper")
 
     col1, col2 = st.columns(2)
     with col1:
-        kmz_fdt_file = st.file_uploader("📤 Upload file .kmz Cluster (FDT, FAT & NEW POLE)", type="kmz", key="fdt")
+        kmz_fdt_file = st.file_uploader("📤 Upload file .kmz Cluster (FDT)", type="kmz", key="fdt")
     with col2:
-        kmz_subfeeder_file = st.file_uploader("📤 Upload file .kmz Subfeeder (NEW POLE 7-4 / 9-4)", type="kmz", key="subfeeder")
+        kmz_subfeeder_file = st.file_uploader("📤 Upload file .kmz Subfeeder", type="kmz", key="subfeeder")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        district = st.text_input("🗺️ District (E)")
-    with col2:
-        subdistrict = st.text_input("🏙️ Subdistrict (F)")
-    with col3:
-        vendor = st.text_input("🏗️ Vendor Name (AB)")
+    district = st.text_input("🗺️ District")
+    subdistrict = st.text_input("🏙️ Subdistrict")
+    vendor = st.text_input("🏗️ Vendor")
 
+    # Tombol submit
     submit = st.button("🚀 Submit & Kirim ke Spreadsheet")
 
     if submit:
@@ -144,8 +123,6 @@ def main():
         count_fdt = 0
         count_cable = 0
         count_subfeeder = 0
-        count_fat = 0
-        count_pole = 0
 
         if kmz_fdt_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ FDT..."):
@@ -162,18 +139,6 @@ def main():
                     sheet = client.open_by_key(SPREADSHEET_ID_4).worksheet(SHEET_NAME_4)
                     count_cable = append_cable_pekanbaru(sheet, folders['DISTRIBUTION CABLE'], district, subdistrict, vendor, kmz_name)
 
-                if 'FAT' in folders:
-                    sheet = client.open_by_key(SPREADSHEET_ID_2).worksheet(SHEET_NAME_2)
-                    append_fat_to_sheet(sheet, folders['FAT'], poles, district, subdistrict, vendor)
-                    count_fat = len(folders['FAT'])
-
-                pole_keys = ['NEW POLE 7-3', 'NEW POLE 7-4', 'NEW POLE 9-4', 'EXISTING POLE EMR 7-3', 'EXISTING POLE EMR 7-4', 'EXISTING POLE EMR 9-4']
-                poles_to_append = [item for key in pole_keys if key in folders for item in folders[key]]
-                if poles_to_append:
-                    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-                    append_poles_to_main_sheet(sheet, poles_to_append, district, subdistrict, vendor)
-                    count_pole = len(poles_to_append)
-
         if kmz_subfeeder_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ Subfeeder..."):
                 folders, poles = extract_kmz_data_combined(kmz_subfeeder_file)
@@ -185,22 +150,17 @@ def main():
                     sheet = client.open_by_key(SPREADSHEET_ID_5).worksheet(SHEET_NAME_5)
                     count_subfeeder = append_subfeeder_cable(sheet, folders['CABLE'], district, subdistrict, vendor, kmz_name)
 
-                pole_keys = ['NEW POLE 7-4', 'NEW POLE 9-4']
-                poles_to_append = [item for key in pole_keys if key in folders for item in folders[key]]
-                if poles_to_append:
-                    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-                    append_poles_to_main_sheet(sheet, poles_to_append, district, subdistrict, vendor)
-                    count_pole += len(poles_to_append)
-
         if (kmz_fdt_file or kmz_subfeeder_file) and district and subdistrict and vendor:
             st.success("✅ Semua data berhasil diproses dan dikirim ke Spreadsheet!")
             st.info(f"🛰️ {count_fdt} FDT dikirim ke spreadsheet FDT Pekanbaru")
             st.info(f"📦 {count_cable} kabel distribusi dikirim ke Cable Pekanbaru")
             st.info(f"🔌 {count_subfeeder} kabel subfeeder dikirim ke Sheet1")
-            st.info(f"🗼 {count_pole} pole dikirim ke spreadsheet Pole Pekanbaru")
-            st.info(f"🧭 {count_fat} FAT dikirim ke spreadsheet FAT Pekanbaru")
         else:
             st.warning("⚠️ Mohon lengkapi semua input dan upload file yang diperlukan sebelum Submit.")
 
 if __name__ == "__main__":
     main()
+
+
+
+
