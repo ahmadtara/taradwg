@@ -49,7 +49,7 @@ def extract_kmz_data_combined(kmz_file):
                     coords.append((float(parts[0]), float(parts[1])))
         return coords
     
-    def recurse_folder(folder, ns, path=""):
+    def recurse_folder(folder, ns, path="", kmz_name=None):
         name_el = folder.find("kml:name", ns)
         folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
         current_path = f"{path}/{folder_name}" if path else folder_name
@@ -121,7 +121,7 @@ def extract_kmz_data_combined(kmz_file):
                 poles.append({**item, "folder": "ext9m4inch", "height": "9"})
 
         for subfolder in folder.findall("kml:Folder", ns):
-            recurse_folder(subfolder, ns, current_path)
+            recurse_folder(folder, ns, kmz_name=kmz_name)
 
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
@@ -134,7 +134,7 @@ def extract_kmz_data_combined(kmz_file):
             ns = {'kml': 'http://www.opengis.net/kml/2.2'}
 
             for folder in root.findall(".//kml:Folder", ns):
-                recurse_folder(folder, ns)
+                recurse_folder(folder, ns, kmz_name=kmz_name)
 
     return folders, poles
 
@@ -197,6 +197,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
