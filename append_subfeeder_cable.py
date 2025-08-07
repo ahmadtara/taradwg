@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from pyproj import Transformer
 
 def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
