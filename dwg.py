@@ -29,55 +29,65 @@ def extract_kmz_data_combined(kmz_file):
     folders = {}
     poles = []
 
-    def recurse_folder(folder, ns, path=""):
-        items = []
-        name_el = folder.find("kml:name", ns)
-        folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
-        new_path = f"{path}/{folder_name}" if path else folder_name
+    def recurse_folder(folder, ns, path="", seen_items=None):
+    if seen_items is None:
+        seen_items = set()
 
-        if folder_name not in folders:
-            folders[folder_name] = []
+    items = []
+    name_el = folder.find("kml:name", ns)
+    folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
+    new_path = f"{path}/{folder_name}" if path else folder_name
 
-        for placemark in folder.findall("kml:Placemark", ns):
-            name_tag = placemark.find("kml:name", ns)
-            name = name_tag.text.strip() if name_tag is not None else ""
+    if folder_name not in folders:
+        folders[folder_name] = []
 
-            coords_tag = placemark.find(".//kml:coordinates", ns)
-            coords = coords_tag.text.strip().split(",") if coords_tag is not None and coords_tag.text else ["", ""]
-            lon, lat = coords[:2] if len(coords) >= 2 else ("", "")
+    for placemark in folder.findall("kml:Placemark", ns):
+        name_tag = placemark.find("kml:name", ns)
+        name = name_tag.text.strip() if name_tag is not None else ""
 
-            description_tag = placemark.find("kml:description", ns)
-            description = description_tag.text.strip() if description_tag is not None else ""
+        coords_tag = placemark.find(".//kml:coordinates", ns)
+        coords = coords_tag.text.strip().split(",") if coords_tag is not None and coords_tag.text else ["", ""]
+        lon, lat = coords[:2] if len(coords) >= 2 else ("", "")
 
-            item = {
-                "name": name,
-                "lon": float(lon) if lon else None,
-                "lat": float(lat) if lat else None,
-                "description": description,
-                "folder": folder_name,
-                "full_path": new_path
-            }
+        # Unique key to prevent duplication
+        key = f"{folder_name}_{name}_{lon}_{lat}"
+        if key in seen_items:
+            continue
+        seen_items.add(key)
 
-            folders[folder_name].append(item)
-            items.append(item)
+        description_tag = placemark.find("kml:description", ns)
+        description = description_tag.text.strip() if description_tag is not None else ""
 
-            if folder_name == "NEW POLE 7-3":
-                poles.append({**item, "folder": "7m3inch", "height": "7"})
-            elif folder_name == "NEW POLE 7-4":
-                poles.append({**item, "folder": "7m4inch", "height": "7"})
-            elif folder_name == "NEW POLE 9-4":
-                poles.append({**item, "folder": "9m4inch", "height": "9"})
-            elif folder_name == "EXISTING POLE EMR 7-3":
-                poles.append({**item, "folder": "ext7m3inch", "height": "7"})
-            elif folder_name == "EXISTING POLE EMR 7-4":
-                poles.append({**item, "folder": "ext7m4inch", "height": "7"})
-            elif folder_name == "EXISTING POLE EMR 9-4":
-                poles.append({**item, "folder": "ext9m4inch", "height": "9"})
+        item = {
+            "name": name,
+            "lon": float(lon) if lon else None,
+            "lat": float(lat) if lat else None,
+            "description": description,
+            "folder": folder_name,
+            "full_path": new_path
+        }
 
-        for subfolder in folder.findall("kml:Folder", ns):
-            items += recurse_folder(subfolder, ns, new_path)
+        folders[folder_name].append(item)
+        items.append(item)
 
-        return items
+        # Handle pole types
+        if folder_name == "NEW POLE 7-3":
+            poles.append({**item, "folder": "7m3inch", "height": "7"})
+        elif folder_name == "NEW POLE 7-4":
+            poles.append({**item, "folder": "7m4inch", "height": "7"})
+        elif folder_name == "NEW POLE 9-4":
+            poles.append({**item, "folder": "9m4inch", "height": "9"})
+        elif folder_name == "EXISTING POLE EMR 7-3":
+            poles.append({**item, "folder": "ext7m3inch", "height": "7"})
+        elif folder_name == "EXISTING POLE EMR 7-4":
+            poles.append({**item, "folder": "ext7m4inch", "height": "7"})
+        elif folder_name == "EXISTING POLE EMR 9-4":
+            poles.append({**item, "folder": "ext9m4inch", "height": "9"})
+
+    for subfolder in folder.findall("kml:Folder", ns):
+        items += recurse_folder(subfolder, ns, new_path, seen_items)
+
+    return items
 
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
@@ -147,3 +157,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
