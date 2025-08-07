@@ -13,7 +13,7 @@ from shapely.geometry import LineString
 from pyproj import Transformer 
 
 # Ubah koordinat WGS84 ke UTM Zone 60S (EPSG:32760)
-transformer = Transformer.from_crs("epsg:4326", "epsg:32760", always_xy=True)
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
 
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
 SHEET_NAME_3 = "FDT Pekanbaru"
@@ -82,6 +82,7 @@ def extract_kmz_data_combined(kmz_file):
                     if len(coords) >= 2:
                         lon = coords[0]
                         lat = coords[1]
+
             elif linestring is not None:
                 coords = extract_coords(placemark)
                 if len(coords) >= 2 and folder_name == "CABLE": 
@@ -102,7 +103,8 @@ def extract_kmz_data_combined(kmz_file):
                 "description": description,
                 "folder": folder_name,
                 "full_path": current_path,
-                "length_m": length_m 
+                "length_m": length_m,
+                "path": current_path
             }
 
             folders[folder_name].append(item)
@@ -197,3 +199,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
