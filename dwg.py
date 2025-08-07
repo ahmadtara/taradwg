@@ -12,7 +12,8 @@ from datetime import datetime
 from shapely.geometry import LineString
 from pyproj import Transformer 
 
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:32760", always_xy=True)
+# Ubah koordinat WGS84 ke UTM Zone 60S (EPSG:32760)
+transformer = Transformer.from_crs("epsg:4326", "epsg:32760", always_xy=True)
 
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
 SHEET_NAME_3 = "FDT Pekanbaru"
@@ -30,7 +31,7 @@ def authenticate_google():
     client = gspread.authorize(credentials)
     return client
 
-def extract_kmz_data_combined(kmz_file, kmz_name):
+def extract_kmz_data_combined(kmz_file):
     import xml.etree.ElementTree as ET
     import zipfile
 
@@ -49,7 +50,7 @@ def extract_kmz_data_combined(kmz_file, kmz_name):
                     coords.append((float(parts[0]), float(parts[1])))
         return coords
     
-    def recurse_folder(folder, ns, path="", kmz_name=None):
+    def recurse_folder(folder, ns, path=""):
         name_el = folder.find("kml:name", ns)
         folder_name = name_el.text.strip().upper() if name_el is not None else "UNKNOWN"
         current_path = f"{path}/{folder_name}" if path else folder_name
@@ -83,12 +84,11 @@ def extract_kmz_data_combined(kmz_file, kmz_name):
                         lat = coords[1]
             elif linestring is not None:
                 coords = extract_coords(placemark)
-                if len(coords) >= 2 and folder_name == "CABLE":
-                        if kmz_name.upper() in name.upper():
-                        # Ubah koordinat (lon, lat) -> (x, y) dalam meter
-                            projected_coords = [transformer.transform(lon, lat) for lon, lat in coords]
-                            line = LineString(projected_coords)
-                            length_m = round(line.length, 2)
+                if len(coords) >= 2 and folder_name == "CABLE": 
+                    # Ubah koordinat (lon, lat) -> (x, y) dalam meter
+                    projected_coords = [transformer.transform(lon, lat) for lon, lat in coords]
+                    line = LineString(projected_coords)
+                    length_m = round(line.length, 2)
 
             unique_key = (name, lon, lat, folder_name)
             if unique_key in seen_items:
@@ -121,7 +121,7 @@ def extract_kmz_data_combined(kmz_file, kmz_name):
                 poles.append({**item, "folder": "ext9m4inch", "height": "9"})
 
         for subfolder in folder.findall("kml:Folder", ns):
-            recurse_folder(folder, ns, kmz_name=kmz_name)
+            recurse_folder(subfolder, ns, current_path)
 
     with zipfile.ZipFile(kmz_file, 'r') as z:
         kml_filename = next((f for f in z.namelist() if f.lower().endswith('.kml')), None)
@@ -134,7 +134,7 @@ def extract_kmz_data_combined(kmz_file, kmz_name):
             ns = {'kml': 'http://www.opengis.net/kml/2.2'}
 
             for folder in root.findall(".//kml:Folder", ns):
-                recurse_folder(folder, ns, kmz_name=kmz_name)
+                recurse_folder(folder, ns)
 
     return folders, poles
 
@@ -163,7 +163,7 @@ def main():
 
         if kmz_fdt_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ FDT..."):
-                folders, poles = extract_kmz_data_combined(kmz_fdt_file, kmz_name)
+                folders, poles = extract_kmz_data_combined(kmz_fdt_file)
                 kmz_name = kmz_fdt_file.name.replace(".kmz", "")
                 if client is None:
                     client = authenticate_google()
@@ -178,7 +178,7 @@ def main():
 
         if kmz_subfeeder_file and district and subdistrict and vendor:
             with st.spinner("🔍 Memproses KMZ Subfeeder..."):
-                folders, poles = extract_kmz_data_combined(kmz_subfeeder_file, kmz_name)
+                folders, poles = extract_kmz_data_combined(kmz_subfeeder_file)
                 kmz_name = kmz_subfeeder_file.name.replace(".kmz", "")
                 if client is None:
                     client = authenticate_google()
@@ -197,33 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
