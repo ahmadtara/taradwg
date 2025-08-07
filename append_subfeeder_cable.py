@@ -14,7 +14,7 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
         
         row[0] = name
         row[1] = name
-        row[2:5] = template_row[2:5]
+        row[2:6] = template_row[2:6]
         row[11] = template_row[11]
         row[20:21] = template_row[20:21]
         row[22] = vendor
