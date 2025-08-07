@@ -1,11 +1,6 @@
 import re
 from datetime import datetime
 from pyproj import Transformer
-from shapely.geometry import LineString
-
-# Ubah koordinat WGS84 ke UTM Zone 60S (EPSG:32760)
-transformer = Transformer.from_crs("epsg:4326", "epsg:32760", always_xy=True)
-
 
 def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz_name):
     existing_rows = sheet.get_all_values()
@@ -47,16 +42,8 @@ def append_subfeeder_cable(sheet, cable_data, district, subdistrict, vendor, kmz
             row[16] = match.group(1)
 
         # === Kolom P (index 15): Hitung panjang lintasan (meter) ===
-        coords = cable.get("coordinates", [])
-        if coords and len(coords) >= 2:
-            utm_coords = []
-            for lon, lat in coords:
-                x, y = transformer.transform(lon, lat)
-                utm_coords.append((x, y))
-            line = LineString(utm_coords)
-            row[15] = round(line.length, 2)
-        else:
-            row[15] = "")
+        # ✅ Kolom P (index 15)
+        row[15] = cable.get("length_m", "")
 
         rows.append(row)
 
