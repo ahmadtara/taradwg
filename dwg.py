@@ -10,6 +10,7 @@ from append_cable_pekanbaru import append_cable_pekanbaru
 from append_subfeeder_cable import append_subfeeder_cable
 from datetime import datetime
 from shapely.geometry import LineString
+from pyproj import Transformer 
 
 # Ubah koordinat WGS84 ke UTM Zone 60S (EPSG:32760)
 transformer = Transformer.from_crs("epsg:4326", "epsg:32760", always_xy=True)
@@ -187,6 +188,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
