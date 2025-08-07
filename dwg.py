@@ -30,7 +30,7 @@ def authenticate_google():
     client = gspread.authorize(credentials)
     return client
 
-def extract_kmz_data_combined(kmz_file):
+def extract_kmz_data_combined(kmz_file, kmz_name):
     import xml.etree.ElementTree as ET
     import zipfile
 
@@ -197,6 +197,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
