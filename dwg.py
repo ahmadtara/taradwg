@@ -214,7 +214,7 @@ def append_fat_to_sheet(sheet, fat_points, poles, district, subdistrict, vendor)
         all_rows.append(row)
 
     sheet.append_rows(all_rows)
-    st.success(f"✅ {len(fat_points)} FAT berhasil dikirim ke Spreadsheet ke-2 🛰️")
+    st.success(f"✅ {len(fat_points)} FAT ")
 
 def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
     global _cached_headers, _cached_prev_row
@@ -285,9 +285,9 @@ def append_poles_to_main_sheet(sheet, poles, district, subdistrict, vendor):
 
     st.info(f"""
 📊 **Ringkasan Pengunggahan**:
-- 7m3inch: {count_types['7m3inch']} titik
-- 7m4inch: {count_types['7m4inch']} titik
-- 9m4inch: {count_types['9m4inch']} titik
+✅ 7m3inch: {count_types['7m3inch']} titik
+✅ 7m4inch: {count_types['7m4inch']} titik
+✅ 9m4inch: {count_types['9m4inch']} titik
 """)
     
 def main():
@@ -391,14 +391,15 @@ def main():
         if (kmz_fdt_file or kmz_subfeeder_file):
             st.success("✅ Semua data berhasil diproses dan dikirim ke Spreadsheet!")
             if count_fdt:
-                st.info(f"🛰️ {count_fdt} FDT dikirim ke spreadsheet FDT Pekanbaru")
+                st.info(f"✅ {count_fdt} FDT ")
             if count_cable:
-                st.info(f"📦 {count_cable} kabel distribusi dikirim ke Cable Pekanbaru")
+                st.info(f"✅ {count_cable} Kabel distribusi")
             if count_subfeeder:
-                st.info(f"🔌 {count_subfeeder} kabel subfeeder dikirim ke Sheet1")
+                st.info(f"✅ {count_subfeeder} Kabel SubFeeder")
         else:
             st.warning("⚠️ Mohon upload minimal satu file KMZ CLUSTER atau SUBFEEDER.")
 
 if __name__ == "__main__":
     main()
+
 
