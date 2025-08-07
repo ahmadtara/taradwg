@@ -13,8 +13,6 @@ from append_poles_to_main_sheet import append_poles_to_main_sheet
 from datetime import datetime
 import tempfile
 
-dist = __import__('math').dist
-
 SPREADSHEET_ID_3 = "1EnteHGDnRhwthlCO9B12zvHUuv3wtq5L2AKlV11qAOU"
 SHEET_NAME_3 = "FDT Pekanbaru"
 
@@ -33,56 +31,14 @@ SHEET_NAME_2 = "FAT Pekanbaru"
 _cached_headers = None
 _cached_prev_row = None
 
+dist = __import__('math').dist
+
 def authenticate_google():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(credentials)
     return client
-
-def extract_points_from_kmz(kmz_path):
-    fat_points, poles, poles_subfeeder = [], [], []
-
-    def recurse_folder(folder, ns, path=""):
-        items = []
-        name_el = folder.find("kml:name", ns)
-        folder_name = name_el.text.upper() if name_el is not None else "UNKNOWN"
-        new_path = f"{path}/{folder_name}" if path else folder_name
-        for sub in folder.findall("kml:Folder", ns):
-            items += recurse_folder(sub, ns, new_path)
-        for pm in folder.findall("kml:Placemark", ns):
-            nm = pm.find("kml:name", ns)
-            coord = pm.find(".//kml:coordinates", ns)
-            if nm is not None and coord is not None and ',' in coord.text:
-                lon, lat = coord.text.strip().split(",")[:2]
-                items.append({"name": nm.text.strip(), "lat": float(lat), "lon": float(lon), "path": new_path})
-        return items
-
-    with zipfile.ZipFile(kmz_path, 'r') as zf:
-        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
-        if not kml_file:
-            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
-            return [], [], []
-
-        root = ET.parse(zf.open(kml_file)).getroot()
-        ns = {"kml": "http://www.opengis.net/kml/2.2"}
-        all_pm = []
-        for folder in root.findall(".//kml:Folder", ns):
-            all_pm += recurse_folder(folder, ns)
-
-    for p in all_pm:
-        base_folder = p["path"].split("/")[0].upper()
-        if base_folder == "FAT":
-            fat_points.append(p)
-        elif base_folder == "NEW POLE 7-3":
-            poles.append({**p, "folder": "7m3inch", "height": "7", "remarks": "CLUSTER"})
-            poles_subfeeder.append({**p, "folder": "7m3inch", "height": "7"})
-        elif base_folder == "NEW POLE 7-4":
-            poles.append({**p, "folder": "7m4inch", "height": "7"})
-        elif base_folder == "NEW POLE 9-4":
-            poles.append({**p, "folder": "9m4inch", "height": "9"})
-
-    return fat_points, poles, poles_subfeeder
 
 def extract_kmz_data_combined(kmz_file):
     folders = {}
@@ -139,6 +95,20 @@ def extract_kmz_data_combined(kmz_file):
 
         for subfolder in folder.findall("kml:Folder", ns):
             recurse_folder(subfolder, ns, current_path)
+
+    with zipfile.ZipFile(kmz_file, 'r') as zf:
+        kml_file = next((f for f in zf.namelist() if f.lower().endswith(".kml")), None)
+        if not kml_file:
+            st.error("❌ Tidak ditemukan file .kml dalam .kmz")
+            return {}, []
+
+        root = ET.parse(zf.open(kml_file)).getroot()
+        ns = {"kml": "http://www.opengis.net/kml/2.2"}
+
+        for folder in root.findall(".//kml:Folder", ns):
+            recurse_folder(folder, ns)
+
+    return folders, poles
 
 def find_nearest_pole(fat_point, poles):
     min_dist = float('inf')
@@ -234,5 +204,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
